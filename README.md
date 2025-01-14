@@ -60,7 +60,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
         "type": "Send",
         "amt": "1",
         "recipient": "<address>",
-        "adddress": "<address>"
+        "adddress": "<address>",
+        "txid": "<txid>"
     },
     ...
 ]
@@ -81,7 +82,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
         "type": "Send",
         "amt": "1",
         "recipient": "<address>",
-        "adddress": "<address>"
+        "adddress": "<address>",
+        "txid": "<txid>"
     },
     ...
 ]
@@ -122,7 +124,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
   "event_type": "new_block",
   "height": 1,
   "proof": "<hash>",
-  "blockhash": "<hash>"}
+  "blockhash": "<hash>"
+}
 ```
 
 ###### Reorg
@@ -141,7 +144,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
   "max": 1000000,
   "lim": 500000,
   "dec": 18,
-  "address": "<address>"
+  "address": "<address>",
+  "txid": "<txid>"
 }
 ```
 
@@ -151,7 +155,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
   "id": 1,
   "type": "Mint",
   "amt": "1000.0",
-  "address": "<address>"
+  "address": "<address>",
+  "txid": "<txid>"
 }
 ```
 
@@ -161,7 +166,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
   "id": 1,
   "type": "DeployTransfer",
   "amt": "500.0",
-  "address": "<address>"
+  "address": "<address>",
+  "txid": "<txid>"
 }
 ```
 
@@ -172,7 +178,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
   "type": "Send",
   "amt": "250.0",
   "recipient": "<address>",
-  "address": "<address>"
+  "address": "<address>",
+  "txid": "<txid>"
 }
 ```
 
@@ -183,7 +190,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
   "type": "Receive",
   "amt": "250.0",
   "sender": "<address>",
-  "address": "<address>"
+  "address": "<address>",
+  "txid": "<txid>"
 }
 ```
 
@@ -193,7 +201,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
   "id": 1,
   "type": "SendReceive",
   "amt": "500.0",
-  "address": "<address>"
+  "address": "<address>",
+  "txid": "<txid>"
 }
 ```
 
