@@ -77,7 +77,6 @@ impl db::Pebble for Vec<AddressTokenId> {
 
     fn from_bytes(v: Cow<[u8]>) -> anyhow::Result<Self::Inner> {
         v.chunks(32 + 4 + 8)
-            .into_iter()
             .map(|x| AddressTokenId::from_bytes(Cow::Borrowed(x)))
             .collect()
     }
@@ -85,19 +84,41 @@ impl db::Pebble for Vec<AddressTokenId> {
 
 #[derive(Debug, Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Default)]
 pub struct TokenBalance {
-    pub balance: Decimal,
-    pub transferable_balance: Decimal,
+    pub balance: Fixed128,
+    pub transferable_balance: Fixed128,
     pub transfers_count: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum TokenHistoryDB {
-    Deploy { max: u64, lim: u64, dec: u8 },
-    Mint { amt: Decimal },
-    DeployTransfer { amt: Decimal },
-    Send { amt: Decimal, recipient: FullHash },
-    Receive { amt: Decimal, sender: FullHash },
-    SendReceive { amt: Decimal },
+    Deploy {
+        max: u64,
+        lim: u64,
+        dec: u8,
+        txid: Txid,
+    },
+    Mint {
+        amt: Fixed128,
+        txid: Txid,
+    },
+    DeployTransfer {
+        amt: Fixed128,
+        txid: Txid,
+    },
+    Send {
+        amt: Fixed128,
+        recipient: FullHash,
+        txid: Txid,
+    },
+    Receive {
+        amt: Fixed128,
+        sender: FullHash,
+        txid: Txid,
+    },
+    SendReceive {
+        amt: Fixed128,
+        txid: Txid,
+    },
 }
 
 #[derive(Serialize, Debug, Clone, Deserialize)]
@@ -109,23 +130,37 @@ pub struct HistoryValue {
 impl TokenHistoryDB {
     pub fn from_token_history(token_history: HistoryTokenAction) -> Self {
         match token_history {
-            HistoryTokenAction::Deploy { max, lim, dec, .. } => {
-                TokenHistoryDB::Deploy { max, lim, dec }
-            }
-            HistoryTokenAction::Mint { amt, .. } => TokenHistoryDB::Mint { amt },
-            HistoryTokenAction::DeployTransfer { amt, .. } => {
-                TokenHistoryDB::DeployTransfer { amt }
+            HistoryTokenAction::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+                ..
+            } => TokenHistoryDB::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+            },
+            HistoryTokenAction::Mint { amt, txid, .. } => TokenHistoryDB::Mint { amt, txid },
+            HistoryTokenAction::DeployTransfer { amt, txid, .. } => {
+                TokenHistoryDB::DeployTransfer { amt, txid }
             }
             HistoryTokenAction::Send {
                 amt,
                 recipient,
                 sender,
+                txid,
                 ..
             } => {
                 if sender == recipient {
-                    TokenHistoryDB::SendReceive { amt }
+                    TokenHistoryDB::SendReceive { amt, txid }
                 } else {
-                    TokenHistoryDB::Send { amt, recipient }
+                    TokenHistoryDB::Send {
+                        amt,
+                        recipient,
+                        txid,
+                    }
                 }
             }
         }
@@ -143,8 +178,8 @@ impl TokenHistoryDB {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TokenBalanceRest {
     pub tick: String,
-    pub balance: Decimal,
-    pub transferable_balance: Decimal,
+    pub balance: Fixed128,
+    pub transferable_balance: Fixed128,
     pub transfers: Vec<TokenTransfer>,
     pub transfers_count: u64,
 }
@@ -156,32 +191,31 @@ pub struct TokenProtoRest {
     pub max: u64,
     pub lim: u64,
     pub dec: u8,
-    pub supply: Decimal,
+    pub supply: Fixed128,
     pub mint_count: u64,
     pub transfer_count: u64,
 }
 
 impl From<TokenMeta> for TokenProtoRest {
     fn from(value: TokenMeta) -> Self {
-        let result = match value.proto {
-            DeployProtoDB {
-                tick,
-                max,
-                lim,
-                dec,
-                supply,
-                mint_count,
-                transfer_count,
-            } => Self {
-                genesis: value.genesis,
-                tick: String::from_utf8_lossy(&tick).to_string(),
-                max,
-                lim,
-                dec,
-                supply,
-                mint_count,
-                transfer_count,
-            },
+        let DeployProtoDB {
+            tick,
+            max,
+            lim,
+            dec,
+            supply,
+            mint_count,
+            transfer_count,
+        } = value.proto;
+        let result = Self {
+            genesis: value.genesis,
+            tick: String::from_utf8_lossy(&tick).to_string(),
+            max,
+            lim,
+            dec,
+            supply,
+            mint_count,
+            transfer_count,
         };
         result
     }
@@ -333,44 +367,88 @@ pub enum ParsedTokenAction {
     },
     Mint {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
     },
     DeployTransfer {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
     },
     SpentTransfer {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
     },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TokenTransfer {
     pub outpoint: OutPoint,
-    pub amount: Decimal,
+    pub amount: Fixed128,
 }
 
 #[derive(Serialize)]
 #[serde(tag = "type")]
 pub enum TokenActionRest {
-    Deploy { max: u64, lim: u64, dec: u8 },
-    Mint { amt: Decimal },
-    DeployTransfer { amt: Decimal },
-    Send { amt: Decimal, recipient: String },
-    Receive { amt: Decimal, sender: String },
-    SendReceive { amt: Decimal },
+    Deploy {
+        max: u64,
+        lim: u64,
+        dec: u8,
+        txid: Txid,
+    },
+    Mint {
+        amt: Fixed128,
+        txid: Txid,
+    },
+    DeployTransfer {
+        amt: Fixed128,
+        txid: Txid,
+    },
+    Send {
+        amt: Fixed128,
+        recipient: String,
+        txid: Txid,
+    },
+    Receive {
+        amt: Fixed128,
+        sender: String,
+        txid: Txid,
+    },
+    SendReceive {
+        amt: Fixed128,
+        txid: Txid,
+    },
 }
 
 impl From<HistoryValueEvent> for TokenActionRest {
     fn from(value: HistoryValueEvent) -> Self {
         match value.action {
-            server::TokenHistoryEvent::Deploy { max, lim, dec } => Self::Deploy { max, lim, dec },
-            server::TokenHistoryEvent::DeployTransfer { amt } => Self::DeployTransfer { amt },
-            server::TokenHistoryEvent::Mint { amt } => Self::Mint { amt },
-            server::TokenHistoryEvent::Send { amt, recipient } => Self::Send { amt, recipient },
-            server::TokenHistoryEvent::Receive { amt, sender } => Self::Receive { amt, sender },
-            server::TokenHistoryEvent::SendReceive { amt } => Self::SendReceive { amt },
+            server::TokenHistoryEvent::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+            } => Self::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+            },
+            server::TokenHistoryEvent::DeployTransfer { amt, txid } => {
+                Self::DeployTransfer { amt, txid }
+            }
+            server::TokenHistoryEvent::Mint { amt, txid } => Self::Mint { amt, txid },
+            server::TokenHistoryEvent::Send {
+                amt,
+                recipient,
+                txid,
+            } => Self::Send {
+                amt,
+                recipient,
+                txid,
+            },
+            server::TokenHistoryEvent::Receive { amt, sender, txid } => {
+                Self::Receive { amt, sender, txid }
+            }
+            server::TokenHistoryEvent::SendReceive { amt, txid } => Self::SendReceive { amt, txid },
         }
     }
 }
@@ -378,18 +456,36 @@ impl From<HistoryValueEvent> for TokenActionRest {
 impl TokenActionRest {
     fn from_with_addresses(value: TokenHistoryDB, addresses: &HashMap<FullHash, String>) -> Self {
         match value {
-            TokenHistoryDB::Deploy { max, lim, dec } => TokenActionRest::Deploy { max, lim, dec },
-            TokenHistoryDB::Mint { amt } => TokenActionRest::Mint { amt },
-            TokenHistoryDB::DeployTransfer { amt } => TokenActionRest::DeployTransfer { amt },
-            TokenHistoryDB::Send { amt, recipient } => TokenActionRest::Send {
+            TokenHistoryDB::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+            } => TokenActionRest::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+            },
+            TokenHistoryDB::Mint { amt, txid } => TokenActionRest::Mint { amt, txid },
+            TokenHistoryDB::DeployTransfer { amt, txid } => {
+                TokenActionRest::DeployTransfer { amt, txid }
+            }
+            TokenHistoryDB::Send {
+                amt,
+                recipient,
+                txid,
+            } => TokenActionRest::Send {
                 amt,
                 recipient: addresses.get(&recipient).unwrap().clone(),
+                txid,
             },
-            TokenHistoryDB::Receive { amt, sender } => TokenActionRest::Receive {
+            TokenHistoryDB::Receive { amt, sender, txid } => TokenActionRest::Receive {
                 amt,
                 sender: addresses.get(&sender).unwrap().clone(),
+                txid,
             },
-            TokenHistoryDB::SendReceive { amt } => TokenActionRest::SendReceive { amt },
+            TokenHistoryDB::SendReceive { amt, txid } => TokenActionRest::SendReceive { amt, txid },
         }
     }
 }
@@ -461,7 +557,7 @@ impl From<TokenMeta> for TokenMetaDB {
     fn from(meta: TokenMeta) -> Self {
         TokenMetaDB {
             genesis: meta.genesis,
-            proto: meta.proto.into(),
+            proto: meta.proto,
         }
     }
 }
@@ -470,7 +566,7 @@ impl From<TokenMetaDB> for TokenMeta {
     fn from(meta: TokenMetaDB) -> Self {
         TokenMeta {
             genesis: meta.genesis,
-            proto: meta.proto.into(),
+            proto: meta.proto,
         }
     }
 }
@@ -543,10 +639,7 @@ impl FromStr for InscriptionId {
 
         let txid = &s[..TXID_LEN];
 
-        let separator = s
-            .chars()
-            .nth(TXID_LEN)
-            .ok_or_else(|| ParseError::Separator(' '))?;
+        let separator = s.chars().nth(TXID_LEN).ok_or(ParseError::Separator(' '))?;
 
         if separator != 'i' {
             return Err(ParseError::Separator(separator));

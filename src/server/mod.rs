@@ -32,7 +32,7 @@ impl Server {
         let server = Self {
             client: Arc::new(
                 AsyncClient::new(
-                    &*URL,
+                    &URL,
                     Some(USER.to_string()),
                     Some(PASS.to_string()),
                     token.clone(),
@@ -96,7 +96,7 @@ impl Server {
 
             for (k, v) in history {
                 let bytes = serde_json::to_vec(
-                    &HistoryRest::new(v.height, v.action.clone(), k.clone(), &self).await?,
+                    &HistoryRest::new(v.height, v.action.clone(), k.clone(), self).await?,
                 )?;
                 res.extend(bytes);
             }

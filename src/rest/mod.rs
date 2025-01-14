@@ -121,7 +121,7 @@ async fn proof_of_history(
     let res = server
         .db
         .proof_of_history
-        .range(..&query.offset.map(|x| x).unwrap_or(u64::MAX), true)
+        .range(..&query.offset.unwrap_or(u64::MAX), true)
         .map(|(height, hash)| ProofOfHistoryRest {
             hash: hash.to_string(),
             height,
@@ -341,7 +341,7 @@ async fn address_tokens(
             .map(|x| {
                 let TransferProto::Bel20 { amt, .. } = x.1;
                 TokenTransfer {
-                    outpoint: x.0.outpoint.into(),
+                    outpoint: x.0.outpoint,
                     amount: amt,
                 }
             })

@@ -24,29 +24,67 @@ pub struct HistoryValueEvent {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum TokenHistoryEvent {
-    Deploy { max: u64, lim: u64, dec: u8 },
-    Mint { amt: Decimal },
-    DeployTransfer { amt: Decimal },
-    Send { amt: Decimal, recipient: String },
-    Receive { amt: Decimal, sender: String },
-    SendReceive { amt: Decimal },
+    Deploy {
+        max: u64,
+        lim: u64,
+        dec: u8,
+        txid: Txid,
+    },
+    Mint {
+        amt: Fixed128,
+        txid: Txid,
+    },
+    DeployTransfer {
+        amt: Fixed128,
+        txid: Txid,
+    },
+    Send {
+        amt: Fixed128,
+        recipient: String,
+        txid: Txid,
+    },
+    Receive {
+        amt: Fixed128,
+        sender: String,
+        txid: Txid,
+    },
+    SendReceive {
+        amt: Fixed128,
+        txid: Txid,
+    },
 }
 
 impl TokenHistoryEvent {
     fn into_event(value: TokenHistoryDB, addresses: &HashMap<FullHash, String>) -> Self {
         match value {
-            TokenHistoryDB::Deploy { max, lim, dec } => Self::Deploy { max, lim, dec },
-            TokenHistoryDB::Mint { amt } => Self::Mint { amt },
-            TokenHistoryDB::DeployTransfer { amt } => Self::DeployTransfer { amt },
-            TokenHistoryDB::Send { amt, recipient } => Self::Send {
+            TokenHistoryDB::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+            } => Self::Deploy {
+                max,
+                lim,
+                dec,
+                txid,
+            },
+            TokenHistoryDB::Mint { amt, txid } => Self::Mint { amt, txid },
+            TokenHistoryDB::DeployTransfer { amt, txid } => Self::DeployTransfer { amt, txid },
+            TokenHistoryDB::Send {
+                amt,
+                recipient,
+                txid,
+            } => Self::Send {
                 amt,
                 recipient: addresses.get(&recipient).unwrap().clone(),
+                txid,
             },
-            TokenHistoryDB::Receive { amt, sender } => Self::Receive {
+            TokenHistoryDB::Receive { amt, sender, txid } => Self::Receive {
                 amt,
                 sender: addresses.get(&sender).unwrap().clone(),
+                txid,
             },
-            TokenHistoryDB::SendReceive { amt } => Self::SendReceive { amt },
+            TokenHistoryDB::SendReceive { amt, txid } => Self::SendReceive { amt, txid },
         }
     }
 }

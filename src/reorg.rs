@@ -3,15 +3,15 @@ use super::*;
 pub const REORG_CACHE_MAX_LEN: usize = 30;
 
 enum TokenHistoryEntry {
-    ToRemoveDeployed(TokenTick),
-    /// Second arg `Decimal` is amount of mint to remove. We need to decrease user balance + mint count + total supply of deploy
-    ToRemoveMint(AddressToken, Decimal),
-    /// Second arg `Decimal` is amount of transfer to remove. We need to decrease user balance, transfers_count, transfers_amount + transfer count of deploy
-    ToRemoveTransfer(Location, AddressToken, Decimal),
+    RemoveDeployed(TokenTick),
+    /// Second arg `Fixed128` is amount of mint to remove. We need to decrease user balance + mint count + total supply of deploy
+    RemoveMint(AddressToken, Fixed128),
+    /// Second arg `Fixed128` is amount of transfer to remove. We need to decrease user balance, transfers_count, transfers_amount + transfer count of deploy
+    RemoveTransfer(Location, AddressToken, Fixed128),
     /// Key and value of removed valid transfer
-    ToRestoreTrasferred(AddressLocation, TransferProtoDB, Option<FullHash>),
-    ToRemoveHistory(AddressTokenId),
-    ToRestorePrevout(OutPoint, TxOut),
+    RestoreTrasferred(AddressLocation, TransferProtoDB, Option<FullHash>),
+    RemoveHistory(AddressTokenId),
+    RestorePrevout(OutPoint, TxOut),
 }
 
 #[derive(Default)]
@@ -56,16 +56,16 @@ impl ReorgCache {
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::ToRemoveDeployed(tick));
+            .push(TokenHistoryEntry::RemoveDeployed(tick));
     }
 
-    pub fn added_minted_token(&mut self, token: AddressToken, amount: Decimal) {
+    pub fn added_minted_token(&mut self, token: AddressToken, amount: Fixed128) {
         self.blocks
             .last_entry()
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::ToRemoveMint(token, amount));
+            .push(TokenHistoryEntry::RemoveMint(token, amount));
     }
 
     pub fn added_history(&mut self, key: AddressTokenId) {
@@ -74,7 +74,7 @@ impl ReorgCache {
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::ToRemoveHistory(key));
+            .push(TokenHistoryEntry::RemoveHistory(key));
     }
 
     pub fn removed_prevout(&mut self, key: OutPoint, value: TxOut) {
@@ -83,21 +83,21 @@ impl ReorgCache {
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::ToRestorePrevout(key, value));
+            .push(TokenHistoryEntry::RestorePrevout(key, value));
     }
 
     pub fn added_transfer_token(
         &mut self,
         location: Location,
         token: AddressToken,
-        amount: Decimal,
+        amount: Fixed128,
     ) {
         self.blocks
             .last_entry()
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::ToRemoveTransfer(location, token, amount));
+            .push(TokenHistoryEntry::RemoveTransfer(location, token, amount));
     }
 
     pub fn removed_transfer_token(
@@ -111,7 +111,7 @@ impl ReorgCache {
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::ToRestoreTrasferred(
+            .push(TokenHistoryEntry::RestoreTrasferred(
                 key,
                 value.into(),
                 recipient,
@@ -122,9 +122,9 @@ impl ReorgCache {
         while !self.blocks.is_empty() && block_height <= *self.blocks.last_key_value().unwrap().0 {
             let (height, data) = self.blocks.pop_last().anyhow()?;
 
-            db.last_block.set((), height as u64 - 1);
+            db.last_block.set((), height - 1);
             db.last_history_id.set((), data.last_history_id);
-            db.block_hashes.remove(height as u64);
+            db.block_hashes.remove(height);
 
             {
                 let mut to_remove_deployed = vec![];
@@ -137,24 +137,24 @@ impl ReorgCache {
 
                 for entry in data.token_history.into_iter().rev() {
                     match entry {
-                        TokenHistoryEntry::ToRemoveDeployed(tick) => {
+                        TokenHistoryEntry::RemoveDeployed(tick) => {
                             to_remove_deployed.push(tick);
                         }
-                        TokenHistoryEntry::ToRemoveMint(receiver, amt) => {
+                        TokenHistoryEntry::RemoveMint(receiver, amt) => {
                             to_update_deployed.push(DeployedUpdate::Mint(receiver.token, amt));
                             to_remove_minted.push((receiver, amt));
                         }
-                        TokenHistoryEntry::ToRemoveTransfer(location, receiver, amt) => {
+                        TokenHistoryEntry::RemoveTransfer(location, receiver, amt) => {
                             to_update_deployed.push(DeployedUpdate::Transfer(receiver.token));
                             to_remove_transfer.push((location, receiver, amt));
                         }
-                        TokenHistoryEntry::ToRestoreTrasferred(key, value, recipient) => {
+                        TokenHistoryEntry::RestoreTrasferred(key, value, recipient) => {
                             to_restore_transferred.push((key, value, recipient));
                         }
-                        TokenHistoryEntry::ToRemoveHistory(key) => {
+                        TokenHistoryEntry::RemoveHistory(key) => {
                             to_remove_history.push(key);
                         }
-                        TokenHistoryEntry::ToRestorePrevout(key, value) => {
+                        TokenHistoryEntry::RestorePrevout(key, value) => {
                             to_restore_prevout.push((key, value));
                         }
                     }
@@ -184,7 +184,7 @@ impl ReorgCache {
 
                     let updated_values = to_update_deployed.into_iter().rev().map(|x| match x {
                         DeployedUpdate::Mint(tick, amt) => {
-                            let mut meta = deploys.get(&tick).unwrap().clone();
+                            let mut meta = *deploys.get(&tick).unwrap();
                             let DeployProtoDB {
                                 supply, mint_count, ..
                             } = &mut meta.proto;
@@ -193,7 +193,7 @@ impl ReorgCache {
                             (tick, meta)
                         }
                         DeployedUpdate::Transfer(tick) => {
-                            let mut meta = deploys.get(&tick).unwrap().clone();
+                            let mut meta = *deploys.get(&tick).unwrap();
                             let DeployProtoDB { transfer_count, .. } = &mut meta.proto;
                             *transfer_count -= 1;
                             (tick, meta)
@@ -236,56 +236,48 @@ impl ReorgCache {
                 };
 
                 {
-                    to_remove_minted
-                        .into_iter()
-                        .rev()
-                        .for_each(|(address, amt)| {
-                            accounts.get_mut(&address).map(|x| {
-                                x.balance -= amt;
-                            });
-                        });
+                    for (address, amt) in to_remove_minted.into_iter().rev() {
+                        if let Some(x) = accounts.get_mut(&address) {
+                            x.balance = x.balance.checked_sub(amt).anyhow()?;
+                        }
+                    }
 
                     let transfer_locations_to_remove = to_remove_transfer
                         .into_iter()
                         .map(|(location, address, amt)| {
-                            accounts.get_mut(&address).map(|x| {
+                            if let Some(x) = accounts.get_mut(&address) {
                                 x.balance += amt;
-                                x.transferable_balance -= amt;
+                                x.transferable_balance =
+                                    x.transferable_balance.checked_sub(amt).expect("Overflow");
                                 x.transfers_count = x.transfers_count.checked_sub(1).unwrap();
-                            });
+                            };
+
                             AddressLocation {
                                 address: address.address,
-                                location: location.into(),
+                                location,
                             }
                         })
                         .collect::<HashSet<_>>();
 
-                    to_restore_transferred.iter().for_each(|(k, v, recipient)| {
-                        accounts
-                            .get_mut(&AddressToken {
-                                address: k.address,
-                                token: v.tick,
-                            })
-                            .map(|x| {
-                                x.transferable_balance += v.amt;
-                                x.transfers_count = x.transfers_count.checked_add(1).unwrap();
-                            });
+                    for (k, v, recipient) in &to_restore_transferred {
+                        if let Some(x) = accounts.get_mut(&AddressToken {
+                            address: k.address,
+                            token: v.tick,
+                        }) {
+                            x.transferable_balance += v.amt;
+                            x.transfers_count = x.transfers_count.checked_add(1).unwrap();
+                        };
+
                         if let Some(recipient) = recipient {
-                            accounts
+                            let account = accounts
                                 .get_mut(&AddressToken {
                                     address: *recipient,
                                     token: v.tick,
                                 })
-                                .unwrap()
-                                .balance -= v.amt;
-                        }
-                    });
+                                .unwrap();
 
-                    if accounts.iter().any(|x| {
-                        x.1.balance.is_sign_negative()
-                            || x.1.transferable_balance.is_sign_negative()
-                    }) {
-                        anyhow::bail!("Some of accounts is overflowed");
+                            account.balance = account.balance.checked_sub(v.amt).anyhow()?;
+                        }
                     }
 
                     db.address_token_to_balance.extend(accounts.into_iter());
@@ -309,11 +301,11 @@ impl ReorgCache {
         let to = self.blocks.last_key_value().map(|x| *x.0);
 
         warn!("Restoring savepoints from {:?} to {:?}", from, to);
-        self.restore(&db, 0)
+        self.restore(db, 0)
     }
 }
 
 enum DeployedUpdate {
-    Mint(TokenTick, Decimal),
+    Mint(TokenTick, Fixed128),
     Transfer(TokenTick),
 }

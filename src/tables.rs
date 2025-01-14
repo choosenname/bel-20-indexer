@@ -43,16 +43,13 @@ impl DB {
             .address_location_to_transfer
             .iter()
             .filter_map(|(k, v)| {
-                if keys
-                    .get(&AddressLocation {
-                        address: k.address.clone(),
-                        location: Location {
-                            offset: 0,
-                            outpoint: k.location.outpoint,
-                        },
-                    })
-                    .is_some()
-                {
+                if keys.contains(&AddressLocation {
+                    address: k.address,
+                    location: Location {
+                        offset: 0,
+                        outpoint: k.location.outpoint,
+                    },
+                }) {
                     Some((k.location, (k.address, v.into())))
                 } else {
                     None

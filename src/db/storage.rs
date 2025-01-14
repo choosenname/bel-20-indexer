@@ -126,7 +126,7 @@ impl<K: Pebble, V: Pebble> RocksTable<K, V> {
         &'a self,
         range: impl RangeBounds<&'a K::Inner>,
         reversed: bool,
-    ) -> Box<dyn Iterator<Item = (K::Inner, V::Inner)> + '_> {
+    ) -> Box<dyn Iterator<Item = (K::Inner, V::Inner)> + 'a> {
         enum Position {
             Start,
             End,
@@ -194,7 +194,7 @@ impl<K: Pebble, V: Pebble> RocksTable<K, V> {
             .take_while(move |(k, _)| {
                 let x = match end_bound {
                     BoundType::Unbounded => None,
-                    _ => Some((**k).cmp(&end.as_ref().unwrap())),
+                    _ => Some((**k).cmp(end.as_ref().unwrap())),
                 };
                 if let Some(x) = x {
                     if let Position::End = end_position {
@@ -203,12 +203,10 @@ impl<K: Pebble, V: Pebble> RocksTable<K, V> {
                         } else {
                             x.is_lt()
                         }
+                    } else if let BoundType::Included = end_bound {
+                        x.is_ge()
                     } else {
-                        if let BoundType::Included = end_bound {
-                            x.is_ge()
-                        } else {
-                            x.is_gt()
-                        }
+                        x.is_gt()
                     }
                 } else {
                     true

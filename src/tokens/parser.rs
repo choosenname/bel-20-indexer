@@ -14,32 +14,36 @@ pub enum HistoryTokenAction {
         lim: u64,
         dec: u8,
         recipient: FullHash,
+        txid: Txid,
     },
     Mint {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
         recipient: FullHash,
+        txid: Txid,
     },
     DeployTransfer {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
         recipient: FullHash,
+        txid: Txid,
     },
     Send {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
         recipient: FullHash,
         sender: FullHash,
+        txid: Txid,
     },
 }
 
 impl HistoryTokenAction {
     pub fn tick(&self) -> TokenTick {
         match self {
-            HistoryTokenAction::Deploy { tick, .. } => tick.clone(),
-            HistoryTokenAction::Mint { tick, .. } => tick.clone(),
-            HistoryTokenAction::DeployTransfer { tick, .. } => tick.clone(),
-            HistoryTokenAction::Send { tick, .. } => tick.clone(),
+            HistoryTokenAction::Deploy { tick, .. } => *tick,
+            HistoryTokenAction::Mint { tick, .. } => *tick,
+            HistoryTokenAction::DeployTransfer { tick, .. } => *tick,
+            HistoryTokenAction::Send { tick, .. } => *tick,
         }
     }
 
@@ -151,15 +155,15 @@ impl TokenCache {
             }
             Brc4::Mint { proto } => {
                 self.token_actions.push(TokenAction::Mint {
-                    owner: inc.owner.clone(),
+                    owner: inc.owner,
                     proto,
                 });
             }
             Brc4::Transfer { proto } => {
                 self.token_actions.push(TokenAction::Transfer {
                     location: inc.location,
-                    owner: inc.owner.clone(),
-                    proto: proto.clone(),
+                    owner: inc.owner,
+                    proto,
                 });
                 self.all_transfers.insert(inc.location, proto);
                 return Some(proto);
@@ -218,7 +222,7 @@ impl TokenCache {
                     ..
                 } => {
                     tickers.insert(*tick);
-                    users.insert((owner.clone(), tick.clone()));
+                    users.insert((*owner, *tick));
                 }
                 TokenAction::Transfer {
                     owner,
@@ -226,28 +230,26 @@ impl TokenCache {
                     ..
                 } => {
                     tickers.insert(*tick);
-                    users.insert((owner.clone(), tick.clone()));
+                    users.insert((*owner, *tick));
                 }
                 TokenAction::Transferred {
                     transfer_location,
                     recipient,
                 } => {
-                    let valid_transfer = self.valid_transfers.get(&transfer_location);
+                    let valid_transfer = self.valid_transfers.get(transfer_location);
                     let proto = {
                         self.all_transfers
-                            .get(&transfer_location)
-                            .map(|x| Some(x.clone()))
-                            .unwrap_or_else(|| {
-                                valid_transfer.map(|x| Some(x.1.clone())).unwrap_or(None)
-                            })
+                            .get(transfer_location)
+                            .map(|x| Some(*x))
+                            .unwrap_or_else(|| valid_transfer.map(|x| Some(x.1)).unwrap_or(None))
                     };
                     if let Some(TransferProto::Bel20 { tick, .. }) = proto {
                         if let Some(recipient) = recipient {
-                            users.insert((recipient.clone(), tick.clone()));
+                            users.insert((*recipient, tick));
                             if let Some(transfer) = valid_transfer {
-                                users.insert((transfer.0.clone(), tick.clone()));
+                                users.insert((transfer.0, tick));
                             }
-                            tickers.insert(tick.clone());
+                            tickers.insert(tick);
                         }
                     }
                 }
@@ -275,24 +277,22 @@ impl TokenCache {
                         lim,
                         dec,
                         ..
-                    } = proto.clone();
-                    match self.tokens.entry(tick.clone()) {
-                        std::collections::hash_map::Entry::Vacant(e) => {
-                            e.insert(TokenMeta { genesis, proto });
+                    } = proto;
+                    if let std::collections::hash_map::Entry::Vacant(e) = self.tokens.entry(tick) {
+                        e.insert(TokenMeta { genesis, proto });
 
-                            history.push(HistoryTokenAction::Deploy {
-                                tick,
-                                max,
-                                lim,
-                                dec,
-                                recipient: owner,
-                            });
+                        history.push(HistoryTokenAction::Deploy {
+                            tick,
+                            max,
+                            lim,
+                            dec,
+                            recipient: owner,
+                            txid: genesis.txid,
+                        });
 
-                            reorg_cache.as_ref().map(|x| {
-                                x.lock().added_deployed_token(tick);
-                            });
+                        if let Some(x) = reorg_cache.as_ref() {
+                            x.lock().added_deployed_token(tick);
                         }
-                        _ => {}
                     }
                 }
                 TokenAction::Mint { owner, proto } => {
@@ -309,23 +309,23 @@ impl TokenCache {
                         ..
                     } = &mut token.proto;
 
-                    if amt.scale() > *dec as u32 {
+                    if amt.scale() > *dec {
                         continue;
                     }
 
-                    if Decimal::from_u64(*lim).unwrap() < amt {
+                    if Fixed128::from(*lim) < amt {
                         continue;
                     }
 
-                    if *supply == Decimal::from_u64(*max).unwrap() {
+                    if *supply == Fixed128::from(*max) {
                         continue;
                     }
-                    let amt = amt.min(Decimal::from_u64(*max).unwrap() - *supply);
+                    let amt = amt.min(Fixed128::from(*max) - *supply);
                     *supply += amt;
 
                     let key = AddressToken {
                         address: owner,
-                        token: tick.clone(),
+                        token: tick,
                     };
                     self.token_accounts.entry(key.clone()).or_default().balance += amt;
                     *mint_count += 1;
@@ -333,12 +333,13 @@ impl TokenCache {
                     history.push(HistoryTokenAction::Mint {
                         tick,
                         amt,
-                        recipient: key.address.clone(),
+                        recipient: key.address,
+                        txid: token.genesis.txid,
                     });
 
-                    reorg_cache.as_ref().map(|x| {
+                    if let Some(x) = reorg_cache.as_ref() {
                         x.lock().added_minted_token(key, amt);
-                    });
+                    }
                 }
                 TokenAction::Transfer {
                     owner,
@@ -350,7 +351,7 @@ impl TokenCache {
                         continue;
                     };
 
-                    let TransferProto::Bel20 { tick, amt } = proto.clone();
+                    let TransferProto::Bel20 { tick, amt } = proto;
 
                     let Some(token) = self.tokens.get_mut(&tick) else {
                         continue;
@@ -361,7 +362,7 @@ impl TokenCache {
                         ..
                     } = &mut token.proto;
 
-                    if amt.scale() > *dec as u32 {
+                    if amt.scale() > *dec {
                         // skip wrong protocol
                         continue;
                     }
@@ -378,9 +379,9 @@ impl TokenCache {
                         continue;
                     }
 
-                    reorg_cache.as_ref().map(|x| {
+                    if let Some(x) = reorg_cache.as_ref() {
                         x.lock().added_transfer_token(location, key.clone(), amt);
-                    });
+                    }
 
                     account.balance -= amt;
                     account.transfers_count += 1;
@@ -389,7 +390,8 @@ impl TokenCache {
                     history.push(HistoryTokenAction::DeployTransfer {
                         tick: key.token,
                         amt,
-                        recipient: key.address.clone(),
+                        recipient: key.address,
+                        txid: token.genesis.txid,
                     });
 
                     self.valid_transfers.insert(location, (key.address, data));
@@ -412,15 +414,15 @@ impl TokenCache {
 
                     if let Some(recipient) = recipient {
                         let key = AddressToken {
-                            address: recipient.clone(),
-                            token: tick.clone(),
+                            address: recipient,
+                            token: tick,
                         };
 
                         self.token_accounts.entry(key).or_default().balance += amt;
 
                         let old_key = AddressToken {
-                            address: sender.clone(),
-                            token: tick.clone(),
+                            address: sender,
+                            token: tick,
                         };
 
                         let old_account = self.token_accounts.get_mut(&old_key).unwrap();
@@ -429,19 +431,21 @@ impl TokenCache {
                         {
                             panic!("Invalid transfer sender balance");
                         }
+
                         old_account.transfers_count -= 1;
                         old_account.transferable_balance -= amt;
 
                         history.push(HistoryTokenAction::Send {
                             amt,
                             tick,
-                            recipient: recipient.clone(),
-                            sender: sender.clone(),
+                            recipient,
+                            sender,
+                            txid: transfer_location.outpoint.txid,
                         });
                     } else {
                         let old_key = AddressToken {
-                            address: sender.clone(),
-                            token: tick.clone(),
+                            address: sender,
+                            token: tick,
                         };
 
                         let old_account = self.token_accounts.get_mut(&old_key).unwrap();
@@ -456,21 +460,22 @@ impl TokenCache {
                         history.push(HistoryTokenAction::Send {
                             tick,
                             amt,
-                            recipient: sender.clone(),
-                            sender: sender.clone(),
+                            recipient: sender,
+                            sender,
+                            txid: transfer_location.outpoint.txid,
                         });
                     }
 
-                    reorg_cache.as_ref().map(|x| {
+                    if let Some(x) = reorg_cache.as_ref() {
                         x.lock().removed_transfer_token(
                             AddressLocation {
                                 address: sender,
-                                location: transfer_location.into(),
+                                location: transfer_location,
                             },
                             TransferProto::Bel20 { tick, amt },
                             recipient,
                         );
-                    });
+                    }
                 }
             }
         }
@@ -522,10 +527,7 @@ impl TokenCache {
                         .into_iter()
                         .map(|(location, (address, proto))| {
                             (
-                                AddressLocation {
-                                    address,
-                                    location: location.into(),
-                                },
+                                AddressLocation { address, location },
                                 TransferProtoDB::from(proto),
                             )
                         }),

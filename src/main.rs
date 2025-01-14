@@ -25,8 +25,7 @@ use {
     inscriptions::{Location, ScriptToAddr},
     itertools::Itertools,
     lazy_static::lazy_static,
-    num_traits::{FromPrimitive, Zero},
-    rust_decimal::Decimal,
+    num_traits::Zero,
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     serde_with::{serde_as, DisplayFromStr},
     server::{Server, ServerEvent},
@@ -58,6 +57,8 @@ mod tokens;
 #[macro_use]
 mod utils;
 mod server;
+
+pub type Fixed128 = nintypes::utils::fixed::Fixed128<18>;
 
 const MAINNET_START_HEIGHT: u64 = 26_371;
 

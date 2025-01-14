@@ -6,7 +6,7 @@ pub trait ScriptToAddr {
 
 impl ScriptToAddr for bellscoin::ScriptBuf {
     fn to_address_str(&self, network: Network) -> Option<String> {
-        bellscoin::Address::from_script(self, network.into())
+        bellscoin::Address::from_script(self, network)
             .map(|s| s.to_string())
             .ok()
     }
@@ -14,16 +14,13 @@ impl ScriptToAddr for bellscoin::ScriptBuf {
 
 impl ScriptToAddr for &bellscoin::ScriptBuf {
     fn to_address_str(&self, network: Network) -> Option<String> {
-        bellscoin::Address::from_script(self, network.into())
+        bellscoin::Address::from_script(self, network)
             .map(|s| s.to_string())
             .ok()
     }
 }
 
-pub fn load_prevouts_for_block<'a>(
-    db: Arc<DB>,
-    txs: &'a [Transaction],
-) -> HashMap<OutPoint, TxOut> {
+pub fn load_prevouts_for_block(db: Arc<DB>, txs: &[Transaction]) -> HashMap<OutPoint, TxOut> {
     let txids_keys = txs
         .iter()
         .skip(1)

@@ -5,7 +5,7 @@ use serde::de::Error;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Protocol(pub Brc4Value, pub Option<Brc4ActionErr>);
 
-pub fn bel_20_decimal<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+pub fn bel_20_decimal<'de, D>(deserializer: D) -> Result<Fixed128, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -23,7 +23,7 @@ where
         return Err(Error::custom("value cannot contain spaces"));
     }
 
-    Decimal::from_str(val).map_err(Error::custom)
+    Fixed128::from_str(val).map_err(Error::custom)
 }
 
 pub fn bel_20_tick<'de, D>(deserializer: D) -> Result<TokenTick, D::Error>
@@ -31,7 +31,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let val = <&str as serde::Deserialize>::deserialize(deserializer)?.to_lowercase();
-    val.as_bytes().try_into().map_err(|e| Error::custom(e))
+    val.as_bytes().try_into().map_err(Error::custom)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -61,7 +61,7 @@ pub enum MintProto {
         #[serde(deserialize_with = "bel_20_tick")]
         tick: TokenTick,
         #[serde(deserialize_with = "bel_20_decimal")]
-        amt: Decimal,
+        amt: Fixed128,
     },
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -88,7 +88,7 @@ pub struct DeployProtoDB {
     pub max: u64,
     pub lim: u64,
     pub dec: u8,
-    pub supply: Decimal,
+    pub supply: Fixed128,
     pub transfer_count: u64,
     pub mint_count: u64,
 }
@@ -106,7 +106,7 @@ impl From<DeployProto> for DeployProtoDB {
                 max,
                 lim,
                 dec,
-                supply: Decimal::ZERO,
+                supply: Fixed128::ZERO,
                 transfer_count: 0,
                 mint_count: 0,
             },
@@ -131,14 +131,14 @@ pub enum TransferProto {
         #[serde(deserialize_with = "bel_20_tick")]
         tick: TokenTick,
         #[serde(deserialize_with = "bel_20_decimal")]
-        amt: Decimal,
+        amt: Fixed128,
     },
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct TransferProtoDB {
     pub tick: TokenTick,
-    pub amt: Decimal,
+    pub amt: Fixed128,
 }
 
 impl From<TransferProto> for TransferProtoDB {
@@ -162,11 +162,11 @@ impl From<TransferProtoDB> for TransferProto {
 pub enum Brc4Value {
     Mint {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
     },
     Transfer {
         tick: TokenTick,
-        amt: Decimal,
+        amt: Fixed128,
     },
     Deploy {
         tick: TokenTick,

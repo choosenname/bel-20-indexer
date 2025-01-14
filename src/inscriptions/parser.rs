@@ -40,7 +40,7 @@ impl InitialIndexer {
                                 offset: u64::MAX,
                             },
                         )
-                        .map(|(k, (address, proto))| (*k, (address.clone(), *proto))),
+                        .map(|(k, (address, proto))| (*k, (*address, *proto))),
                 );
 
                 for &(location, _) in &transfers {
@@ -95,21 +95,15 @@ impl InitialIndexer {
         reorg_cache: Option<Arc<parking_lot::Mutex<crate::reorg::ReorgCache>>>,
     ) -> anyhow::Result<()> {
         let current_hash = server.client.get_block_hash(block_height).await?;
-
         let mut last_history_id = server.db.last_history_id.get(()).unwrap_or_default();
-
         if let Some(cache) = reorg_cache.as_ref() {
             cache.lock().new_block(block_height, last_history_id);
         }
-
         server.db.block_hashes.set(block_height, current_hash);
-
         if reorg_cache.is_some() {
             debug!("Syncing block: {} ({})", current_hash, block_height);
         }
-
         let block = server.client.get_block(&current_hash).await?;
-
         match server.addr_tx.send(server::threads::AddressesToLoad {
             height: block_height,
             addresses: block
@@ -126,7 +120,6 @@ impl InitialIndexer {
                 }
             }
         }
-
         let prevouts = block
             .txdata
             .iter()
@@ -143,77 +136,57 @@ impl InitialIndexer {
                 })
             })
             .filter(|x| !x.1.script_pubkey.is_provably_unspendable());
-
         server.db.prevouts.extend(prevouts);
-
         if block_height < *START_HEIGHT {
             server.db.last_block.set((), block_height);
             return Ok(());
         }
-
         if block.txdata.len() == 1 {
             server.db.last_block.set((), block_height);
             return server.new_hash(block_height, current_hash, &[]).await;
         }
-
         let mut token_cache = TokenCache::default();
-
         let prevouts = utils::load_prevouts_for_block(server.db.clone(), &block.txdata);
-
         if let Some(cache) = reorg_cache.as_ref() {
             prevouts.iter().for_each(|(key, value)| {
                 cache.lock().removed_prevout(*key, value.clone());
             });
         }
-
         token_cache.valid_transfers.extend(
             server.db.load_transfers(
                 prevouts
                     .iter()
-                    .filter_map(|(k, v)| {
-                        Some(AddressLocation {
-                            address: v.script_pubkey.compute_script_hash(),
-                            location: Location {
-                                outpoint: *k,
-                                offset: 0,
-                            },
-                        })
+                    .map(|(k, v)| AddressLocation {
+                        address: v.script_pubkey.compute_script_hash(),
+                        location: Location {
+                            outpoint: *k,
+                            offset: 0,
+                        },
                     })
                     .collect(),
             ),
         );
-
         Self::parse_block(block_height, &block.txdata, &prevouts, &mut token_cache);
-
         token_cache.load_tokens_data(&server.db)?;
-
         let history = token_cache
             .process_token_actions(reorg_cache.clone())
             .into_iter()
             .flat_map(|action| {
                 last_history_id += 1;
-
                 let mut results: Vec<(AddressTokenId, HistoryValue)> = vec![];
-
                 let token = action.tick();
-
                 let recipient = action.recipient();
-
                 let key = AddressTokenId {
                     address: recipient,
                     token,
                     id: last_history_id,
                 };
-
                 let db_action = TokenHistoryDB::from_token_history(action.clone());
-
-                if let TokenHistoryDB::Send { amt, .. } = db_action {
+                if let TokenHistoryDB::Send { amt, txid, .. } = db_action {
                     let sender = action
                         .sender()
                         .expect("Should be in here with the Send action");
-
                     last_history_id += 1;
-
                     results.extend([
                         (
                             AddressTokenId {
@@ -230,7 +203,7 @@ impl InitialIndexer {
                             key,
                             HistoryValue {
                                 height: block_height,
-                                action: TokenHistoryDB::Receive { amt, sender },
+                                action: TokenHistoryDB::Receive { amt, sender, txid },
                             },
                         ),
                     ])
@@ -243,7 +216,6 @@ impl InitialIndexer {
                         },
                     ));
                 }
-
                 match server.raw_event_sender.send(results.clone()) {
                     Ok(_) => {}
                     _ => {
@@ -252,17 +224,16 @@ impl InitialIndexer {
                         }
                     }
                 }
-
                 results
             })
             .collect_vec();
 
-        reorg_cache.as_ref().map(|reorg_cache| {
+        if let Some(reorg_cache) = reorg_cache.as_ref() {
             let mut cache = reorg_cache.lock();
             history
                 .iter()
                 .for_each(|(k, _)| cache.added_history(k.clone()));
-        });
+        };
 
         {
             let new_keys = history
@@ -287,14 +258,13 @@ impl InitialIndexer {
 
         server.db.last_block.set((), block_height);
         server.db.last_history_id.set((), last_history_id);
-
         Ok(())
     }
 
     fn parse_inscriptions(payload: ParseInscription) -> Vec<InscriptionTemplate> {
         let mut result = vec![];
 
-        for inscription in Inscription::from_transaction(&payload.tx, payload.input_idx) {
+        for inscription in Inscription::from_transaction(payload.tx, payload.input_idx) {
             match inscription {
                 ParsedInscription::None => {}
                 ParsedInscription::Partial => {}
@@ -302,8 +272,7 @@ impl InitialIndexer {
                     let genesis = {
                         InscriptionId {
                             txid: payload.tx.txid(),
-                            // ! REMOVE THIS
-                            index: *payload.inscription_idx as u32,
+                            index: *payload.inscription_idx,
                         }
                     };
 
@@ -359,7 +328,7 @@ impl InitialIndexer {
                         inc.owner = tx_out.script_pubkey.compute_script_hash();
                     }
 
-                    inc.location = location.into();
+                    inc.location = location;
                     inc.value = tx_out.value;
 
                     result.push(inc);
