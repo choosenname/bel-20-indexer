@@ -103,7 +103,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
         "dec": 18,
         "supply": "6000",
         "mint_count": 5,
-        "transfer_count": 10
+        "transfer_count": 10,
+        "holders": 10
     },
     ...
 ]

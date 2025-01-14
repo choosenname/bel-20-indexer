@@ -261,6 +261,7 @@ impl TokenCache {
     pub fn process_token_actions(
         &mut self,
         reorg_cache: Option<Arc<parking_lot::Mutex<crate::reorg::ReorgCache>>>,
+        holders: &Holders,
     ) -> Vec<HistoryTokenAction> {
         let mut history = vec![];
 
@@ -327,7 +328,15 @@ impl TokenCache {
                         address: owner,
                         token: tick,
                     };
-                    self.token_accounts.entry(key.clone()).or_default().balance += amt;
+
+                    holders.increase(
+                        key,
+                        self.token_accounts
+                            .get(&key)
+                            .unwrap_or(&TokenBalance::default()),
+                        amt,
+                    );
+                    self.token_accounts.entry(key).or_default().balance += amt;
                     *mint_count += 1;
 
                     history.push(HistoryTokenAction::Mint {
@@ -412,28 +421,34 @@ impl TokenCache {
                         unreachable!();
                     }
 
+                    let old_key = AddressToken {
+                        address: sender,
+                        token: tick,
+                    };
+
+                    let old_account = self.token_accounts.get_mut(&old_key).unwrap();
+                    if old_account.transfers_count == 0 || old_account.transferable_balance < amt {
+                        panic!("Invalid transfer sender balance");
+                    }
+
+                    holders.decrease(old_key, old_account, amt);
+                    old_account.transfers_count -= 1;
+                    old_account.transferable_balance -= amt;
+
                     if let Some(recipient) = recipient {
                         let key = AddressToken {
                             address: recipient,
                             token: tick,
                         };
 
+                        holders.increase(
+                            key,
+                            self.token_accounts
+                                .get(&key)
+                                .unwrap_or(&TokenBalance::default()),
+                            amt,
+                        );
                         self.token_accounts.entry(key).or_default().balance += amt;
-
-                        let old_key = AddressToken {
-                            address: sender,
-                            token: tick,
-                        };
-
-                        let old_account = self.token_accounts.get_mut(&old_key).unwrap();
-                        if old_account.transfers_count == 0
-                            || old_account.transferable_balance < amt
-                        {
-                            panic!("Invalid transfer sender balance");
-                        }
-
-                        old_account.transfers_count -= 1;
-                        old_account.transferable_balance -= amt;
 
                         history.push(HistoryTokenAction::Send {
                             amt,
@@ -443,20 +458,6 @@ impl TokenCache {
                             txid: transfer_location.outpoint.txid,
                         });
                     } else {
-                        let old_key = AddressToken {
-                            address: sender,
-                            token: tick,
-                        };
-
-                        let old_account = self.token_accounts.get_mut(&old_key).unwrap();
-                        if old_account.transfers_count == 0
-                            || old_account.transferable_balance < amt
-                        {
-                            panic!("Invalid transfer sender balance");
-                        }
-                        old_account.transfers_count -= 1;
-                        old_account.transferable_balance -= amt;
-
                         history.push(HistoryTokenAction::Send {
                             tick,
                             amt,

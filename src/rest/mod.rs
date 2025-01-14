@@ -361,11 +361,13 @@ async fn address_tokens(
 }
 
 async fn all_tokens(State(server): State<Arc<Server>>) -> ApiResult<impl IntoResponse> {
+    let stats = server.holders.stats();
+
     let data = server
         .db
         .token_to_meta
         .iter()
-        .map(|(_, v)| TokenProtoRest::from(TokenMeta::from(v)))
+        .map(|(_, v)| TokenProtoRest::from_meta(v.into(), &stats))
         .collect_vec();
 
     Ok(Json(data))

@@ -13,6 +13,7 @@ pub struct Server {
     pub last_indexed_address_height: Arc<tokio::sync::RwLock<u64>>,
     pub addr_tx: Arc<kanal::Sender<AddressesToLoad>>,
     pub client: Arc<AsyncClient>,
+    pub holders: Arc<Holders>,
 }
 
 impl Server {
@@ -28,6 +29,7 @@ impl Server {
         let (tx, _) = tokio::sync::broadcast::channel(30_000);
         let (addr_tx, addr_rx) = kanal::unbounded();
         let token = WaitToken::default();
+        let db = Arc::new(DB::open(db_path));
 
         let server = Self {
             client: Arc::new(
@@ -40,7 +42,8 @@ impl Server {
                 .await?,
             ),
             addr_tx: Arc::new(addr_tx),
-            db: Arc::new(DB::open(db_path)),
+            holders: Arc::new(Holders::init(&db)),
+            db,
             raw_event_sender: raw_tx.clone(),
             token,
             last_indexed_address_height: Arc::new(tokio::sync::RwLock::new(0)),

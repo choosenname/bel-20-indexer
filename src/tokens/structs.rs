@@ -3,7 +3,7 @@ use server::{AddressTokenIdEvent, HistoryValueEvent};
 
 use super::*;
 
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Copy)]
 pub struct AddressToken {
     pub address: FullHash,
     pub token: TokenTick,
@@ -194,10 +194,11 @@ pub struct TokenProtoRest {
     pub supply: Fixed128,
     pub mint_count: u64,
     pub transfer_count: u64,
+    pub holders: usize,
 }
 
-impl From<TokenMeta> for TokenProtoRest {
-    fn from(value: TokenMeta) -> Self {
+impl TokenProtoRest {
+    pub fn from_meta(value: TokenMeta, holders: &HashMap<TokenTick, usize>) -> Self {
         let DeployProtoDB {
             tick,
             max,
@@ -216,6 +217,7 @@ impl From<TokenMeta> for TokenProtoRest {
             supply,
             mint_count,
             transfer_count,
+            holders: holders.get(&tick).copied().unwrap_or_default(),
         };
         result
     }

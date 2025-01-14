@@ -169,7 +169,7 @@ impl InitialIndexer {
         Self::parse_block(block_height, &block.txdata, &prevouts, &mut token_cache);
         token_cache.load_tokens_data(&server.db)?;
         let history = token_cache
-            .process_token_actions(reorg_cache.clone())
+            .process_token_actions(reorg_cache.clone(), &server.holders)
             .into_iter()
             .flat_map(|action| {
                 last_history_id += 1;

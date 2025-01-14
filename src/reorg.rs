@@ -118,13 +118,13 @@ impl ReorgCache {
             ));
     }
 
-    pub fn restore(&mut self, db: &DB, block_height: u64) -> anyhow::Result<()> {
+    pub fn restore(&mut self, server: &Server, block_height: u64) -> anyhow::Result<()> {
         while !self.blocks.is_empty() && block_height <= *self.blocks.last_key_value().unwrap().0 {
             let (height, data) = self.blocks.pop_last().anyhow()?;
 
-            db.last_block.set((), height - 1);
-            db.last_history_id.set((), data.last_history_id);
-            db.block_hashes.remove(height);
+            server.db.last_block.set((), height - 1);
+            server.db.last_history_id.set((), data.last_history_id);
+            server.db.block_hashes.remove(height);
 
             {
                 let mut to_remove_deployed = vec![];
@@ -160,9 +160,11 @@ impl ReorgCache {
                     }
                 }
 
-                db.address_token_to_history
+                server
+                    .db
+                    .address_token_to_history
                     .remove_batch(to_remove_history.into_iter());
-                db.prevouts.extend(to_restore_prevout.into_iter());
+                server.db.prevouts.extend(to_restore_prevout.into_iter());
 
                 {
                     let deploy_keys = to_update_deployed
@@ -173,7 +175,8 @@ impl ReorgCache {
                         .unique()
                         .collect_vec();
 
-                    let deploys = db
+                    let deploys = server
+                        .db
                         .token_to_meta
                         .multi_get(deploy_keys.iter())
                         .into_iter()
@@ -200,8 +203,10 @@ impl ReorgCache {
                         }
                     });
 
-                    db.token_to_meta.extend(updated_values);
-                    db.token_to_meta
+                    server.db.token_to_meta.extend(updated_values);
+                    server
+                        .db
+                        .token_to_meta
                         .remove_batch(to_remove_deployed.into_iter());
                 }
 
@@ -226,7 +231,9 @@ impl ReorgCache {
                         }))
                         .collect_vec();
 
-                    db.address_token_to_balance
+                    server
+                        .db
+                        .address_token_to_balance
                         .multi_get(keys.iter())
                         .into_iter()
                         .zip(keys)
@@ -236,10 +243,10 @@ impl ReorgCache {
                 };
 
                 {
-                    for (address, amt) in to_remove_minted.into_iter().rev() {
-                        if let Some(x) = accounts.get_mut(&address) {
-                            x.balance = x.balance.checked_sub(amt).anyhow()?;
-                        }
+                    for (key, amt) in to_remove_minted.into_iter().rev() {
+                        let account = accounts.get_mut(&key).unwrap();
+                        server.holders.decrease(key, account, amt);
+                        account.balance = account.balance.checked_sub(amt).anyhow()?;
                     }
 
                     let transfer_locations_to_remove = to_remove_transfer
@@ -249,7 +256,7 @@ impl ReorgCache {
                                 x.balance += amt;
                                 x.transferable_balance =
                                     x.transferable_balance.checked_sub(amt).expect("Overflow");
-                                x.transfers_count = x.transfers_count.checked_sub(1).unwrap();
+                                x.transfers_count -= 1;
                             };
 
                             AddressLocation {
@@ -260,34 +267,43 @@ impl ReorgCache {
                         .collect::<HashSet<_>>();
 
                     for (k, v, recipient) in &to_restore_transferred {
-                        if let Some(x) = accounts.get_mut(&AddressToken {
+                        let key = AddressToken {
                             address: k.address,
                             token: v.tick,
-                        }) {
-                            x.transferable_balance += v.amt;
-                            x.transfers_count = x.transfers_count.checked_add(1).unwrap();
                         };
 
-                        if let Some(recipient) = recipient {
-                            let account = accounts
-                                .get_mut(&AddressToken {
-                                    address: *recipient,
-                                    token: v.tick,
-                                })
-                                .unwrap();
+                        let account = accounts.get_mut(&key).unwrap();
 
+                        server.holders.increase(key, account, v.amt);
+                        account.transferable_balance += v.amt;
+                        account.transfers_count += 1;
+
+                        if let Some(recipient) = recipient {
+                            let key = AddressToken {
+                                address: *recipient,
+                                token: v.tick,
+                            };
+
+                            let account = accounts.get_mut(&key).unwrap();
+
+                            server.holders.decrease(key, account, v.amt);
                             account.balance = account.balance.checked_sub(v.amt).anyhow()?;
                         }
                     }
 
-                    db.address_token_to_balance.extend(accounts.into_iter());
-                    db.address_location_to_transfer.extend(
+                    server
+                        .db
+                        .address_token_to_balance
+                        .extend(accounts.into_iter());
+                    server.db.address_location_to_transfer.extend(
                         to_restore_transferred
                             .into_iter()
                             .map(|x| (x.0, x.1))
                             .filter(|x| !transfer_locations_to_remove.contains(&x.0)),
                     );
-                    db.address_location_to_transfer
+                    server
+                        .db
+                        .address_location_to_transfer
                         .remove_batch(transfer_locations_to_remove.into_iter());
                 }
             }
@@ -296,12 +312,12 @@ impl ReorgCache {
         Ok(())
     }
 
-    pub fn restore_all(&mut self, db: &DB) -> anyhow::Result<()> {
+    pub fn restore_all(&mut self, server: &Server) -> anyhow::Result<()> {
         let from = self.blocks.first_key_value().map(|x| *x.0);
         let to = self.blocks.last_key_value().map(|x| *x.0);
 
         warn!("Restoring savepoints from {:?} to {:?}", from, to);
-        self.restore(db, 0)
+        self.restore(server, 0)
     }
 }
 

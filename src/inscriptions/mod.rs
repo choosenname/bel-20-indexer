@@ -51,7 +51,7 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
 
     info!("Server is finished");
 
-    reorg_cache.lock().restore_all(&server.db).track().ok();
+    reorg_cache.lock().restore_all(&server).track().ok();
 
     server.db.flush_all();
 
@@ -105,7 +105,7 @@ async fn new_fether(
                     .event_sender
                     .send(ServerEvent::Reorg(reorg_counter, current_height))
                     .ok();
-                reorg_cache.lock().restore(&server.db, current_height)?;
+                reorg_cache.lock().restore(&server, current_height)?;
             }
 
             parser::InitialIndexer::handle(
