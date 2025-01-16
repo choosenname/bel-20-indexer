@@ -146,7 +146,7 @@ impl InitialIndexer {
             return server.new_hash(block_height, current_hash, &[]).await;
         }
         let mut token_cache = TokenCache::default();
-        let prevouts = utils::load_prevouts_for_block(server.db.clone(), &block.txdata);
+        let prevouts = utils::load_prevouts_for_block(server.db.clone(), &block.txdata)?;
         if let Some(cache) = reorg_cache.as_ref() {
             prevouts.iter().for_each(|(key, value)| {
                 cache.lock().removed_prevout(*key, value.clone());

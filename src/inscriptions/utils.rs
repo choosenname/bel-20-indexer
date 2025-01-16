@@ -20,7 +20,10 @@ impl ScriptToAddr for &bellscoin::ScriptBuf {
     }
 }
 
-pub fn load_prevouts_for_block(db: Arc<DB>, txs: &[Transaction]) -> HashMap<OutPoint, TxOut> {
+pub fn load_prevouts_for_block(
+    db: Arc<DB>,
+    txs: &[Transaction],
+) -> anyhow::Result<HashMap<OutPoint, TxOut>> {
     let txids_keys = txs
         .iter()
         .skip(1)
@@ -29,7 +32,7 @@ pub fn load_prevouts_for_block(db: Arc<DB>, txs: &[Transaction]) -> HashMap<OutP
         .collect_vec();
 
     if txids_keys.is_empty() {
-        return HashMap::new();
+        return Ok(HashMap::new());
     }
 
     let prevouts = db
@@ -39,11 +42,11 @@ pub fn load_prevouts_for_block(db: Arc<DB>, txs: &[Transaction]) -> HashMap<OutP
         .zip(txids_keys.clone())
         .map(|(v, k)| v.map(|x| (k, x)))
         .collect::<Option<HashMap<_, _>>>()
-        .expect("Some prevouts are missing");
+        .anyhow_with("Some prevouts are missing")?;
 
     std::thread::spawn(move || {
         db.prevouts.remove_batch(txids_keys.iter());
     });
 
-    prevouts
+    Ok(prevouts)
 }
