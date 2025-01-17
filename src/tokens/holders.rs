@@ -38,7 +38,8 @@ impl Holders {
             stats: parking_lot::RwLock::new(stats),
         }
     }
-
+    
+    #[allow(dead_code)]
     pub fn get(&self, tick: TokenTick, offset: usize, limit: usize) -> HashSet<FullHash> {
         let balances = self.balances.read();
 
@@ -70,7 +71,7 @@ impl Holders {
     }
 
     fn change(&self, key: AddressToken, acc: &TokenBalance, amt: Fixed128, action: Action) {
-        // used to prevent footgun with balance (not to forget to add tranferable)
+        // used to prevent footgun with balance (not to forget to add transferable)
         let old_balance = acc.balance + acc.transferable_balance;
         let mut balances = self.balances.write();
 
