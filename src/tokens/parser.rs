@@ -15,18 +15,21 @@ pub enum HistoryTokenAction {
         dec: u8,
         recipient: FullHash,
         txid: Txid,
+        vout: u32,
     },
     Mint {
         tick: TokenTick,
         amt: Fixed128,
         recipient: FullHash,
         txid: Txid,
+        vout: u32,
     },
     DeployTransfer {
         tick: TokenTick,
         amt: Fixed128,
         recipient: FullHash,
         txid: Txid,
+        vout: u32,
     },
     Send {
         tick: TokenTick,
@@ -34,6 +37,7 @@ pub enum HistoryTokenAction {
         recipient: FullHash,
         sender: FullHash,
         txid: Txid,
+        vout: u32,
     },
 }
 
@@ -157,6 +161,8 @@ impl TokenCache {
                 self.token_actions.push(TokenAction::Mint {
                     owner: inc.owner,
                     proto,
+                    txid: inc.location.outpoint.txid,
+                    vout: inc.location.outpoint.vout,
                 });
             }
             Brc4::Transfer { proto } => {
@@ -289,6 +295,7 @@ impl TokenCache {
                             dec,
                             recipient: owner,
                             txid: genesis.txid,
+                            vout: genesis.index,
                         });
 
                         if let Some(x) = reorg_cache.as_ref() {
@@ -296,7 +303,12 @@ impl TokenCache {
                         }
                     }
                 }
-                TokenAction::Mint { owner, proto } => {
+                TokenAction::Mint {
+                    owner,
+                    proto,
+                    txid,
+                    vout,
+                } => {
                     let MintProto::Bel20 { tick, amt } = proto;
                     let Some(token) = self.tokens.get_mut(&tick) else {
                         continue;
@@ -343,7 +355,8 @@ impl TokenCache {
                         tick,
                         amt,
                         recipient: key.address,
-                        txid: token.genesis.txid,
+                        txid,
+                        vout,
                     });
 
                     if let Some(x) = reorg_cache.as_ref() {
@@ -400,7 +413,8 @@ impl TokenCache {
                         tick: key.token,
                         amt,
                         recipient: key.address,
-                        txid: token.genesis.txid,
+                        txid: location.outpoint.txid,
+                        vout: location.outpoint.vout,
                     });
 
                     self.valid_transfers.insert(location, (key.address, data));
@@ -456,6 +470,7 @@ impl TokenCache {
                             recipient,
                             sender,
                             txid: transfer_location.outpoint.txid,
+                            vout: transfer_location.outpoint.vout,
                         });
                     } else {
                         history.push(HistoryTokenAction::Send {
@@ -464,6 +479,7 @@ impl TokenCache {
                             recipient: sender,
                             sender,
                             txid: transfer_location.outpoint.txid,
+                            vout: transfer_location.outpoint.vout,
                         });
                     }
 

@@ -24,7 +24,45 @@ pub fn get_router(server: Arc<Server>) -> Router {
         .route("/proof-of-history", get(proof_of_history))
         .route("/events/:height", get(events_by_height))
         .route("/all-addresses", get(all_addresses))
+        .route("/txid/:txid", get(txid_events))
         .with_state(server)
+}
+
+async fn txid_events(
+    State(server): State<Arc<Server>>,
+    Path(txid): Path<Txid>,
+) -> ApiResult<impl IntoResponse> {
+    let keys = server
+        .db
+        .outpoint_to_event
+        .range(
+            &OutPoint { txid, vout: 0 }..&OutPoint {
+                txid,
+                vout: u32::MAX,
+            },
+            false,
+        )
+        .map(|(_, v)| v)
+        .collect_vec();
+
+    let mut events = join_all(
+        server
+            .db
+            .address_token_to_history
+            .multi_get(keys.iter())
+            .into_iter()
+            .zip(keys)
+            .filter_map(|(v, k)| v.map(|v| (k, v)))
+            .map(|(k, v)| HistoryRest::new(v.height, v.action, k, &server)),
+    )
+    .await
+    .into_iter()
+    .collect::<anyhow::Result<Vec<_>>>()
+    .internal("Failed to load addresses")?;
+
+    events.sort_unstable_by_key(|x| x.address_token.id);
+
+    Ok(Json(events))
 }
 
 async fn all_addresses(State(server): State<Arc<Server>>) -> ApiResult<impl IntoResponse> {

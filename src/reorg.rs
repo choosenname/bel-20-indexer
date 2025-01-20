@@ -160,6 +160,16 @@ impl ReorgCache {
                     }
                 }
 
+                let keys_to_remove = server
+                    .db
+                    .address_token_to_history
+                    .multi_get(to_remove_history.iter())
+                    .into_iter()
+                    .flatten()
+                    .map(|x| x.action.outpoint());
+
+                server.db.outpoint_to_event.remove_batch(keys_to_remove);
+
                 server
                     .db
                     .address_token_to_history

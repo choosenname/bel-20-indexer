@@ -182,7 +182,10 @@ impl InitialIndexer {
                     id: last_history_id,
                 };
                 let db_action = TokenHistoryDB::from_token_history(action.clone());
-                if let TokenHistoryDB::Send { amt, txid, .. } = db_action {
+                if let TokenHistoryDB::Send {
+                    amt, txid, vout, ..
+                } = db_action
+                {
                     let sender = action
                         .sender()
                         .expect("Should be in here with the Send action");
@@ -203,7 +206,12 @@ impl InitialIndexer {
                             key,
                             HistoryValue {
                                 height: block_height,
-                                action: TokenHistoryDB::Receive { amt, sender, txid },
+                                action: TokenHistoryDB::Receive {
+                                    amt,
+                                    sender,
+                                    txid,
+                                    vout,
+                                },
                             },
                         ),
                     ])
@@ -242,16 +250,16 @@ impl InitialIndexer {
                 .sorted_unstable_by_key(|x| x.id)
                 .collect_vec();
             server.db.block_events.set(block_height, new_keys);
+
+            let keys = history.iter().map(|x| (x.1.action.outpoint(), x.0.clone()));
+            server.db.outpoint_to_event.extend(keys)
         }
 
         server
             .new_hash(block_height, current_hash, &history)
             .await?;
 
-        server
-            .db
-            .address_token_to_history
-            .extend(history.into_iter());
+        server.db.address_token_to_history.extend(history);
 
         token_cache.write_token_data(server.db.clone()).await?;
         token_cache.write_valid_transfers(&server.db)?;

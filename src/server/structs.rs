@@ -29,28 +29,34 @@ pub enum TokenHistoryEvent {
         lim: u64,
         dec: u8,
         txid: Txid,
+        vout: u32,
     },
     Mint {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
     DeployTransfer {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
     Send {
         amt: Fixed128,
         recipient: String,
         txid: Txid,
+        vout: u32,
     },
     Receive {
         amt: Fixed128,
         sender: String,
         txid: Txid,
+        vout: u32,
     },
     SendReceive {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
 }
 
@@ -62,29 +68,43 @@ impl TokenHistoryEvent {
                 lim,
                 dec,
                 txid,
+                vout,
             } => Self::Deploy {
                 max,
                 lim,
                 dec,
                 txid,
+                vout,
             },
-            TokenHistoryDB::Mint { amt, txid } => Self::Mint { amt, txid },
-            TokenHistoryDB::DeployTransfer { amt, txid } => Self::DeployTransfer { amt, txid },
+            TokenHistoryDB::Mint { amt, txid, vout } => Self::Mint { amt, txid, vout },
+            TokenHistoryDB::DeployTransfer { amt, txid, vout } => {
+                Self::DeployTransfer { amt, txid, vout }
+            }
             TokenHistoryDB::Send {
                 amt,
                 recipient,
                 txid,
+                vout,
             } => Self::Send {
                 amt,
                 recipient: addresses.get(&recipient).unwrap().clone(),
                 txid,
+                vout,
             },
-            TokenHistoryDB::Receive { amt, sender, txid } => Self::Receive {
+            TokenHistoryDB::Receive {
+                amt,
+                sender,
+                txid,
+                vout,
+            } => Self::Receive {
                 amt,
                 sender: addresses.get(&sender).unwrap().clone(),
                 txid,
+                vout,
             },
-            TokenHistoryDB::SendReceive { amt, txid } => Self::SendReceive { amt, txid },
+            TokenHistoryDB::SendReceive { amt, txid, vout } => {
+                Self::SendReceive { amt, txid, vout }
+            }
         }
     }
 }

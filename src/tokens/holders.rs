@@ -38,23 +38,22 @@ impl Holders {
             stats: parking_lot::RwLock::new(stats),
         }
     }
-    
-    #[allow(dead_code)]
-    pub fn get(&self, tick: TokenTick, offset: usize, limit: usize) -> HashSet<FullHash> {
-        let balances = self.balances.read();
 
-        balances
-            .get(&tick)
-            .map(|x| {
-                x.iter()
-                    .skip(offset)
-                    .take(limit)
-                    .cloned()
-                    .map(|x| x.1)
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
+    // pub fn get(&self, tick: TokenTick, offset: usize, limit: usize) -> HashSet<FullHash> {
+    //     let balances = self.balances.read();
+    //
+    //     balances
+    //         .get(&tick)
+    //         .map(|x| {
+    //             x.iter()
+    //                 .skip(offset)
+    //                 .take(limit)
+    //                 .cloned()
+    //                 .map(|x| x.1)
+    //                 .collect()
+    //         })
+    //         .unwrap_or_default()
+    // }
 
     /// hack because i cant throw -amt cause of type
     pub fn decrease(&self, key: AddressToken, prev_balance: &TokenBalance, amt: Fixed128) {

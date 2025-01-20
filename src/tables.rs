@@ -11,7 +11,8 @@ generate_db_code! {
     last_history_id: () => u64,
     proof_of_history: u64 => UsingConsensus<sha256::Hash>,
     block_events: u64 => Vec<AddressTokenId>,
-    fullhash_to_address: FullHash => String
+    fullhash_to_address: FullHash => String,
+    outpoint_to_event: UsingConsensus<OutPoint> => AddressTokenId,
 }
 
 impl DB {

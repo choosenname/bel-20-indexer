@@ -96,28 +96,34 @@ pub enum TokenHistoryDB {
         lim: u64,
         dec: u8,
         txid: Txid,
+        vout: u32,
     },
     Mint {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
     DeployTransfer {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
     Send {
         amt: Fixed128,
         recipient: FullHash,
         txid: Txid,
+        vout: u32,
     },
     Receive {
         amt: Fixed128,
         sender: FullHash,
         txid: Txid,
+        vout: u32,
     },
     SendReceive {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
 }
 
@@ -135,31 +141,37 @@ impl TokenHistoryDB {
                 lim,
                 dec,
                 txid,
+                vout,
                 ..
             } => TokenHistoryDB::Deploy {
                 max,
                 lim,
                 dec,
                 txid,
+                vout,
             },
-            HistoryTokenAction::Mint { amt, txid, .. } => TokenHistoryDB::Mint { amt, txid },
-            HistoryTokenAction::DeployTransfer { amt, txid, .. } => {
-                TokenHistoryDB::DeployTransfer { amt, txid }
-            }
+            HistoryTokenAction::Mint {
+                amt, txid, vout, ..
+            } => TokenHistoryDB::Mint { amt, txid, vout },
+            HistoryTokenAction::DeployTransfer {
+                amt, txid, vout, ..
+            } => TokenHistoryDB::DeployTransfer { amt, txid, vout },
             HistoryTokenAction::Send {
                 amt,
                 recipient,
                 sender,
                 txid,
+                vout,
                 ..
             } => {
                 if sender == recipient {
-                    TokenHistoryDB::SendReceive { amt, txid }
+                    TokenHistoryDB::SendReceive { amt, txid, vout }
                 } else {
                     TokenHistoryDB::Send {
                         amt,
                         recipient,
                         txid,
+                        vout,
                     }
                 }
             }
@@ -171,6 +183,20 @@ impl TokenHistoryDB {
             TokenHistoryDB::Receive { sender, .. } => Some(sender),
             TokenHistoryDB::Send { recipient, .. } => Some(recipient),
             _ => None,
+        }
+    }
+
+    pub fn outpoint(&self) -> OutPoint {
+        match self {
+            TokenHistoryDB::Deploy { txid, vout, .. }
+            | TokenHistoryDB::Mint { txid, vout, .. }
+            | TokenHistoryDB::DeployTransfer { txid, vout, .. }
+            | TokenHistoryDB::Send { txid, vout, .. }
+            | TokenHistoryDB::Receive { txid, vout, .. }
+            | TokenHistoryDB::SendReceive { txid, vout, .. } => OutPoint {
+                txid: *txid,
+                vout: *vout,
+            },
         }
     }
 }
@@ -345,7 +371,12 @@ pub enum TokenAction {
         owner: FullHash,
     },
     /// Mint new token action.
-    Mint { owner: FullHash, proto: MintProto },
+    Mint {
+        owner: FullHash,
+        proto: MintProto,
+        txid: Txid,
+        vout: u32,
+    },
     /// Transfer token action.
     Transfer {
         location: Location,
@@ -395,28 +426,34 @@ pub enum TokenActionRest {
         lim: u64,
         dec: u8,
         txid: Txid,
+        vout: u32,
     },
     Mint {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
     DeployTransfer {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
     Send {
         amt: Fixed128,
         recipient: String,
         txid: Txid,
+        vout: u32,
     },
     Receive {
         amt: Fixed128,
         sender: String,
         txid: Txid,
+        vout: u32,
     },
     SendReceive {
         amt: Fixed128,
         txid: Txid,
+        vout: u32,
     },
 }
 
@@ -428,29 +465,43 @@ impl From<HistoryValueEvent> for TokenActionRest {
                 lim,
                 dec,
                 txid,
+                vout,
             } => Self::Deploy {
                 max,
                 lim,
                 dec,
                 txid,
+                vout,
             },
-            server::TokenHistoryEvent::DeployTransfer { amt, txid } => {
-                Self::DeployTransfer { amt, txid }
+            server::TokenHistoryEvent::DeployTransfer { amt, txid, vout } => {
+                Self::DeployTransfer { amt, txid, vout }
             }
-            server::TokenHistoryEvent::Mint { amt, txid } => Self::Mint { amt, txid },
+            server::TokenHistoryEvent::Mint { amt, txid, vout } => Self::Mint { amt, txid, vout },
             server::TokenHistoryEvent::Send {
                 amt,
                 recipient,
                 txid,
+                vout,
             } => Self::Send {
                 amt,
                 recipient,
                 txid,
+                vout,
             },
-            server::TokenHistoryEvent::Receive { amt, sender, txid } => {
-                Self::Receive { amt, sender, txid }
+            server::TokenHistoryEvent::Receive {
+                amt,
+                sender,
+                txid,
+                vout,
+            } => Self::Receive {
+                amt,
+                sender,
+                txid,
+                vout,
+            },
+            server::TokenHistoryEvent::SendReceive { amt, txid, vout } => {
+                Self::SendReceive { amt, txid, vout }
             }
-            server::TokenHistoryEvent::SendReceive { amt, txid } => Self::SendReceive { amt, txid },
         }
     }
 }
@@ -463,31 +514,43 @@ impl TokenActionRest {
                 lim,
                 dec,
                 txid,
+                vout,
             } => TokenActionRest::Deploy {
                 max,
                 lim,
                 dec,
                 txid,
+                vout,
             },
-            TokenHistoryDB::Mint { amt, txid } => TokenActionRest::Mint { amt, txid },
-            TokenHistoryDB::DeployTransfer { amt, txid } => {
-                TokenActionRest::DeployTransfer { amt, txid }
+            TokenHistoryDB::Mint { amt, txid, vout } => TokenActionRest::Mint { amt, txid, vout },
+            TokenHistoryDB::DeployTransfer { amt, txid, vout } => {
+                TokenActionRest::DeployTransfer { amt, txid, vout }
             }
             TokenHistoryDB::Send {
                 amt,
                 recipient,
                 txid,
+                vout,
             } => TokenActionRest::Send {
                 amt,
                 recipient: addresses.get(&recipient).unwrap().clone(),
                 txid,
+                vout,
             },
-            TokenHistoryDB::Receive { amt, sender, txid } => TokenActionRest::Receive {
+            TokenHistoryDB::Receive {
+                amt,
+                sender,
+                txid,
+                vout,
+            } => TokenActionRest::Receive {
                 amt,
                 sender: addresses.get(&sender).unwrap().clone(),
                 txid,
+                vout,
             },
-            TokenHistoryDB::SendReceive { amt, txid } => TokenActionRest::SendReceive { amt, txid },
+            TokenHistoryDB::SendReceive { amt, txid, vout } => {
+                TokenActionRest::SendReceive { amt, txid, vout }
+            }
         }
     }
 }
