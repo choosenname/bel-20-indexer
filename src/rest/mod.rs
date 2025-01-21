@@ -10,21 +10,43 @@ use utils::to_scripthash;
 use super::*;
 
 mod utils;
+mod holders;
+mod tokens;
+mod address;
 
 type ApiResult<T> = core::result::Result<T, Response<String>>;
 const INTERNAL: &str = "Can't handle request";
+const BAD_REQUEST: &str = "Can't handle request";
+const BAD_PARAMS: &str = "Can't handle request";
+const NOT_FOUND: &str = "Can't handle request";
 
 pub fn get_router(server: Arc<Server>) -> Router {
     Router::new()
-        .route("/address/:address", get(address_tokens))
-        .route("/address/:address/history", get(address_token_history))
-        .route("/tokens", get(all_tokens))
+        .route("/address/{address}", get(address_tokens))
+        .route("/address/{address}/tokens", get(address_tokens))
+        .route("/address/{address}/history", get(address_token_history))
+        .route(
+            "/address/{address}/tokens-tick",
+            get(address::address_tokens_tick),
+        )
+        .route(
+            "/address/{address}/{tick}/balance",
+            get(address::address_token_balance),
+        )
+        .route("/tokens", get(tokens::tokens))
+        .route("/token", get(tokens::token))
+        .route(
+            "/token/proof/{address}/{outpoint}",
+            get(tokens::token_transfer_proof),
+        )
+        .route("/holders", get(holders::holders))
+
         .route("/events", post(subscribe))
         .route("/status", get(status))
         .route("/proof-of-history", get(proof_of_history))
-        .route("/events/:height", get(events_by_height))
+        .route("/events/{height}", get(events_by_height))
         .route("/all-addresses", get(all_addresses))
-        .route("/txid/:txid", get(txid_events))
+        .route("/txid/{txid}", get(txid_events))
         .with_state(server)
 }
 

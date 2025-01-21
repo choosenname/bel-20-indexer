@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use bellscoin::consensus;
 use server::{AddressTokenIdEvent, HistoryValueEvent};
 
@@ -233,6 +235,7 @@ impl TokenProtoRest {
             supply,
             mint_count,
             transfer_count,
+            ..
         } = value.proto;
         let result = Self {
             genesis: value.genesis,
@@ -253,6 +256,56 @@ impl TokenProtoRest {
 pub struct AddressLocation {
     pub address: FullHash,
     pub location: Location,
+}
+
+impl AddressLocation {
+    pub fn search(address: FullHash, outpoint: Option<OutPoint>) -> RangeInclusive<Self> {
+        if let Some(outpoint) = outpoint {
+            return Self::search_with_outpoint(address, outpoint);
+        }
+
+        let start = Self {
+            address,
+            location: Location {
+                outpoint: OutPoint {
+                    txid: Txid::from_byte_array([0; 32]),
+                    vout: 0,
+                },
+                offset: 0,
+            },
+        };
+        let end = Self {
+            address,
+            location: Location {
+                outpoint: OutPoint {
+                    txid: Txid::from_byte_array([u8::MAX; 32]),
+                    vout: u32::MAX,
+                },
+                offset: u64::MAX,
+            },
+        };
+
+        start..=end
+    }
+
+    fn search_with_outpoint(address: FullHash, outpoint: OutPoint) -> RangeInclusive<Self> {
+        let start = Self {
+            address,
+            location: Location {
+                outpoint,
+                offset: 0,
+            },
+        };
+        let end = Self {
+            address,
+            location: Location {
+                outpoint,
+                offset: u64::MAX,
+            },
+        };
+
+        start..=end
+    }
 }
 
 impl db::Pebble for AddressLocation {
@@ -616,6 +669,12 @@ pub struct TokenMeta {
 pub struct TokenMetaDB {
     pub genesis: InscriptionId,
     pub proto: DeployProtoDB,
+}
+
+impl TokenMetaDB {
+    pub fn is_completed(&self) -> bool {
+        self.proto.is_completed()
+    }
 }
 
 impl From<TokenMeta> for TokenMetaDB {

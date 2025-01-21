@@ -12,6 +12,7 @@ pub struct InitialIndexer {}
 impl InitialIndexer {
     fn parse_block(
         height: u64,
+        created: u32,
         txs: &[Transaction],
         prevouts: &HashMap<OutPoint, TxOut>,
         token_cache: &mut TokenCache,
@@ -80,7 +81,7 @@ impl InitialIndexer {
                     if inc.genesis.index == 0
                         || height as usize >= *MULTIPLE_INPUT_BEL_20_ACTIVATION_HEIGHT
                     {
-                        if let Some(proto) = token_cache.parse_token_action(&inc) {
+                        if let Some(proto) = token_cache.parse_token_action(&inc, height as u32, created) {
                             transfers.push((inc.location, (inc.owner, proto)))
                         };
                     }
@@ -104,6 +105,7 @@ impl InitialIndexer {
             debug!("Syncing block: {} ({})", current_hash, block_height);
         }
         let block = server.client.get_block(&current_hash).await?;
+        let created = block.header.time;
         match server.addr_tx.send(server::threads::AddressesToLoad {
             height: block_height,
             addresses: block
@@ -166,7 +168,13 @@ impl InitialIndexer {
                     .collect(),
             ),
         );
-        Self::parse_block(block_height, &block.txdata, &prevouts, &mut token_cache);
+        Self::parse_block(
+            block_height,
+            created,
+            &block.txdata,
+            &prevouts,
+            &mut token_cache
+        );
         token_cache.load_tokens_data(&server.db)?;
         let history = token_cache
             .process_token_actions(reorg_cache.clone(), &server.holders)

@@ -149,6 +149,7 @@ impl ReorgCache {
                             to_remove_transfer.push((location, receiver, amt));
                         }
                         TokenHistoryEntry::RestoreTrasferred(key, value, recipient) => {
+                            to_update_deployed.push(DeployedUpdate::Transfered(value.tick));
                             to_restore_transferred.push((key, value, recipient));
                         }
                         TokenHistoryEntry::RemoveHistory(key) => {
@@ -180,7 +181,9 @@ impl ReorgCache {
                     let deploy_keys = to_update_deployed
                         .iter()
                         .map(|x| match x {
-                            DeployedUpdate::Mint(tick, _) | DeployedUpdate::Transfer(tick) => *tick,
+                            DeployedUpdate::Mint(tick, _)
+                            | DeployedUpdate::Transfer(tick)
+                            | DeployedUpdate::Transfered(tick) => *tick,
                         })
                         .unique()
                         .collect_vec();
@@ -199,16 +202,31 @@ impl ReorgCache {
                         DeployedUpdate::Mint(tick, amt) => {
                             let mut meta = *deploys.get(&tick).unwrap();
                             let DeployProtoDB {
-                                supply, mint_count, ..
+                                supply,
+                                mint_count,
+                                transactions,
+                                ..
                             } = &mut meta.proto;
                             *supply -= amt;
                             *mint_count -= 1;
+                            *transactions -= 1;
                             (tick, meta)
                         }
                         DeployedUpdate::Transfer(tick) => {
                             let mut meta = *deploys.get(&tick).unwrap();
-                            let DeployProtoDB { transfer_count, .. } = &mut meta.proto;
+                            let DeployProtoDB {
+                                transfer_count,
+                                transactions,
+                                ..
+                            } = &mut meta.proto;
                             *transfer_count -= 1;
+                            *transactions -= 1;
+                            (tick, meta)
+                        }
+                        DeployedUpdate::Transfered(tick) => {
+                            let mut meta = *deploys.get(&tick).unwrap();
+                            let DeployProtoDB { transactions, .. } = &mut meta.proto;
+                            *transactions -= 1;
                             (tick, meta)
                         }
                     });
@@ -334,4 +352,5 @@ impl ReorgCache {
 enum DeployedUpdate {
     Mint(TokenTick, Fixed128),
     Transfer(TokenTick),
+    Transfered(TokenTick),
 }

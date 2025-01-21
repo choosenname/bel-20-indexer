@@ -135,7 +135,12 @@ impl TokenCache {
     }
 
     /// Parse token action from InscriptionTemplace and returns bool if it is mint or not.
-    pub fn parse_token_action(&mut self, inc: &InscriptionTemplate) -> Option<TransferProto> {
+    pub fn parse_token_action(
+        &mut self,
+        inc: &InscriptionTemplate,
+        height: u32,
+        created: u32,
+    ) -> Option<TransferProto> {
         if inc.owner.is_op_return_hash() {
             return None;
         }
@@ -151,11 +156,30 @@ impl TokenCache {
 
         match brc4 {
             Brc4::Deploy { proto } => {
-                self.token_actions.push(TokenAction::Deploy {
-                    genesis: inc.genesis,
-                    proto: proto.into(),
-                    owner: inc.owner,
-                });
+                match proto {
+                    DeployProto::Bel20 {
+                        tick,
+                        max,
+                        lim,
+                        dec,
+                    } => self.token_actions.push(TokenAction::Deploy {
+                        genesis: inc.genesis,
+                        proto: DeployProtoDB {
+                            tick,
+                            max,
+                            lim,
+                            dec,
+                            supply: Fixed128::ZERO,
+                            transfer_count: 0,
+                            mint_count: 0,
+                            height,
+                            created,
+                            deployer: inc.owner,
+                            transactions: 1,
+                        },
+                        owner: inc.owner,
+                    }),
+                };
             }
             Brc4::Mint { proto } => {
                 self.token_actions.push(TokenAction::Mint {
@@ -319,6 +343,7 @@ impl TokenCache {
                         dec,
                         supply,
                         mint_count,
+                        transactions,
                         ..
                     } = &mut token.proto;
 
@@ -335,6 +360,7 @@ impl TokenCache {
                     }
                     let amt = amt.min(Fixed128::from(*max) - *supply);
                     *supply += amt;
+                    *transactions += 1;
 
                     let key = AddressToken {
                         address: owner,
@@ -381,6 +407,7 @@ impl TokenCache {
                     let DeployProtoDB {
                         transfer_count,
                         dec,
+                        transactions,
                         ..
                     } = &mut token.proto;
 
@@ -402,7 +429,7 @@ impl TokenCache {
                     }
 
                     if let Some(x) = reorg_cache.as_ref() {
-                        x.lock().added_transfer_token(location, key.clone(), amt);
+                        x.lock().added_transfer_token(location, key, amt);
                     }
 
                     account.balance -= amt;
@@ -419,6 +446,7 @@ impl TokenCache {
 
                     self.valid_transfers.insert(location, (key.address, data));
                     *transfer_count += 1;
+                    *transactions += 1;
                 }
                 TokenAction::Transferred {
                     transfer_location,
@@ -445,9 +473,18 @@ impl TokenCache {
                         panic!("Invalid transfer sender balance");
                     }
 
+                    let Some(token) = self.tokens.get_mut(&tick) else {
+                        continue;
+                    };
+                    let DeployProtoDB {
+                        transactions,
+                        ..
+                    } = &mut token.proto;
+
                     holders.decrease(old_key, old_account, amt);
                     old_account.transfers_count -= 1;
                     old_account.transferable_balance -= amt;
+                    *transactions += 1;
 
                     if let Some(recipient) = recipient {
                         let key = AddressToken {

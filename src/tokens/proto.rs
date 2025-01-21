@@ -1,5 +1,6 @@
 use super::*;
 
+use num_traits::FromPrimitive;
 use serde::de::Error;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -91,28 +92,43 @@ pub struct DeployProtoDB {
     pub supply: Fixed128,
     pub transfer_count: u64,
     pub mint_count: u64,
+    pub height: u32,
+    pub created: u32,
+    pub deployer: FullHash,
+    pub transactions: u32,
 }
 
-impl From<DeployProto> for DeployProtoDB {
-    fn from(value: DeployProto) -> Self {
-        match value {
-            DeployProto::Bel20 {
-                tick,
-                max,
-                lim,
-                dec,
-            } => DeployProtoDB {
-                tick,
-                max,
-                lim,
-                dec,
-                supply: Fixed128::ZERO,
-                transfer_count: 0,
-                mint_count: 0,
-            },
-        }
+impl DeployProtoDB {
+    pub fn is_completed(&self) -> bool {
+        self.supply == Fixed128::from(self.max)
+    }
+    pub fn mint_percent(&self) -> Fixed128 {
+        (rust_decimal::Decimal::from_u64(100).unwrap() * self.supply.into_decimal()
+            / rust_decimal::Decimal::from_u64(self.max).unwrap())
+        .into()
     }
 }
+
+// impl From<DeployProto> for DeployProtoDB {
+//     fn from(value: DeployProto) -> Self {
+//         match value {
+//             DeployProto::Bel20 {
+//                 tick,
+//                 max,
+//                 lim,
+//                 dec,
+//             } => DeployProtoDB {
+//                 tick,
+//                 max,
+//                 lim,
+//                 dec,
+//                 supply: Fixed128::ZERO,
+//                 transfer_count: 0,
+//                 mint_count: 0,
+//             },
+//         }
+//     }
+// }
 
 impl DeployProto {
     pub const DEFAULT_DEC: u8 = 18;
