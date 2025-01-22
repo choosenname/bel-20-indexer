@@ -11,7 +11,7 @@ pub struct InitialIndexer {}
 
 impl InitialIndexer {
     fn parse_block(
-        height: u64,
+        height: u32,
         created: u32,
         txs: &[Transaction],
         prevouts: &HashMap<OutPoint, TxOut>,
@@ -81,8 +81,11 @@ impl InitialIndexer {
                     if inc.genesis.index == 0
                         || height as usize >= *MULTIPLE_INPUT_BEL_20_ACTIVATION_HEIGHT
                     {
-                        if let Some(proto) = token_cache.parse_token_action(&inc, height as u32, created) {
-                            transfers.push((inc.location, (inc.owner, proto)))
+                        if let Some(proto) = token_cache.parse_token_action(&inc, height, created) {
+                            transfers.push((
+                                inc.location,
+                                (inc.owner, TransferProtoDB::from_proto(proto, height)),
+                            ))
                         };
                     }
                 }
@@ -91,7 +94,7 @@ impl InitialIndexer {
     }
 
     pub async fn handle(
-        block_height: u64,
+        block_height: u32,
         server: Arc<Server>,
         reorg_cache: Option<Arc<parking_lot::Mutex<crate::reorg::ReorgCache>>>,
     ) -> anyhow::Result<()> {
@@ -173,7 +176,7 @@ impl InitialIndexer {
             created,
             &block.txdata,
             &prevouts,
-            &mut token_cache
+            &mut token_cache,
         );
         token_cache.load_tokens_data(&server.db)?;
         let history = token_cache

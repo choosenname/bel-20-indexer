@@ -9,10 +9,10 @@ use utils::to_scripthash;
 
 use super::*;
 
-mod utils;
+mod address;
 mod holders;
 mod tokens;
-mod address;
+mod utils;
 
 type ApiResult<T> = core::result::Result<T, Response<String>>;
 const INTERNAL: &str = "Can't handle request";
@@ -40,7 +40,6 @@ pub fn get_router(server: Arc<Server>) -> Router {
             get(tokens::token_transfer_proof),
         )
         .route("/holders", get(holders::holders))
-
         .route("/events", post(subscribe))
         .route("/status", get(status))
         .route("/proof-of-history", get(proof_of_history))
@@ -143,7 +142,7 @@ async fn status(State(server): State<Arc<Server>>) -> ApiResult<impl IntoRespons
 
 async fn events_by_height(
     State(server): State<Arc<Server>>,
-    Path(height): Path<u64>,
+    Path(height): Path<u32>,
 ) -> ApiResult<impl IntoResponse> {
     let keys = server.db.block_events.get(height).unwrap_or_default();
 
@@ -181,7 +180,7 @@ async fn proof_of_history(
     let res = server
         .db
         .proof_of_history
-        .range(..&query.offset.unwrap_or(u64::MAX), true)
+        .range(..&query.offset.unwrap_or(u32::MAX), true)
         .map(|(height, hash)| ProofOfHistoryRest {
             hash: hash.to_string(),
             height,
@@ -420,19 +419,6 @@ async fn address_tokens(
         .internal(INTERNAL)
 }
 
-async fn all_tokens(State(server): State<Arc<Server>>) -> ApiResult<impl IntoResponse> {
-    let stats = server.holders.stats();
-
-    let data = server
-        .db
-        .token_to_meta
-        .iter()
-        .map(|(_, v)| TokenProtoRest::from_meta(v.into(), &stats))
-        .collect_vec();
-
-    Ok(Json(data))
-}
-
 #[derive(Deserialize)]
 struct AddressTokenHistoryParams {
     offset: Option<u64>,
@@ -450,20 +436,20 @@ struct SubscribeRequest {
 
 #[derive(Serialize)]
 struct StatusRest {
-    height: u64,
+    height: u32,
     proof: String,
     blockhash: String,
 }
 
 #[derive(Serialize)]
 struct ProofOfHistoryRest {
-    height: u64,
+    height: u32,
     hash: String,
 }
 
 #[derive(Deserialize)]
 struct ProofHistoryParams {
-    offset: Option<u64>,
+    offset: Option<u32>,
     limit: Option<usize>,
 }
 
@@ -471,13 +457,13 @@ struct ProofHistoryParams {
 struct ReorgRest {
     event_type: String,
     blocks_count: u32,
-    new_height: u64,
+    new_height: u32,
 }
 
 #[derive(Serialize)]
 struct NewBlockRest {
     event_type: String,
-    height: u64,
+    height: u32,
     proof: sha256::Hash,
     blockhash: BlockHash,
 }

@@ -60,7 +60,7 @@ mod server;
 
 pub type Fixed128 = nintypes::utils::fixed::Fixed128<18>;
 
-const MAINNET_START_HEIGHT: u64 = 26_371;
+const MAINNET_START_HEIGHT: u32 = 26_371;
 
 const OP_RETURN_ADDRESS: &str = "BURNED";
 const NON_STANDARD_ADDRESS: &str = "non-standard";
@@ -92,7 +92,7 @@ lazy_static! {
     } else {
         0
     };
-    static ref START_HEIGHT: u64 = match *NETWORK {
+    static ref START_HEIGHT: u32 = match *NETWORK {
         Network::Bellscoin => MAINNET_START_HEIGHT,
         _ => 0,
     };

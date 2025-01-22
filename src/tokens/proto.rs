@@ -109,27 +109,6 @@ impl DeployProtoDB {
     }
 }
 
-// impl From<DeployProto> for DeployProtoDB {
-//     fn from(value: DeployProto) -> Self {
-//         match value {
-//             DeployProto::Bel20 {
-//                 tick,
-//                 max,
-//                 lim,
-//                 dec,
-//             } => DeployProtoDB {
-//                 tick,
-//                 max,
-//                 lim,
-//                 dec,
-//                 supply: Fixed128::ZERO,
-//                 transfer_count: 0,
-//                 mint_count: 0,
-//             },
-//         }
-//     }
-// }
-
 impl DeployProto {
     pub const DEFAULT_DEC: u8 = 18;
     pub const MAX_DEC: u8 = 18;
@@ -155,12 +134,13 @@ pub enum TransferProto {
 pub struct TransferProtoDB {
     pub tick: TokenTick,
     pub amt: Fixed128,
+    pub height: u32,
 }
 
-impl From<TransferProto> for TransferProtoDB {
-    fn from(value: TransferProto) -> Self {
+impl TransferProtoDB {
+    pub fn from_proto(value: TransferProto, height: u32) -> Self {
         match value {
-            TransferProto::Bel20 { tick, amt } => TransferProtoDB { tick, amt },
+            TransferProto::Bel20 { tick, amt } => TransferProtoDB { tick, amt, height },
         }
     }
 }

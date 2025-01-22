@@ -53,7 +53,7 @@ impl AsyncClient {
         }
     }
 
-    pub async fn get_block_hash(&self, height: u64) -> anyhow::Result<bellscoin::BlockHash> {
+    pub async fn get_block_hash(&self, height: u32) -> anyhow::Result<bellscoin::BlockHash> {
         self.request("getblockhash", &[height.into()]).await
     }
 

@@ -80,10 +80,10 @@ pub struct TokenCache {
     pub token_actions: Vec<TokenAction>,
 
     /// All transfer actions. Used to check if a transfer is valid. Used like cache.
-    pub all_transfers: HashMap<Location, TransferProto>,
+    pub all_transfers: HashMap<Location, TransferProtoDB>,
 
     /// All transfer actions that are valid. Used to write to the db.
-    pub valid_transfers: BTreeMap<Location, (FullHash, TransferProto)>,
+    pub valid_transfers: BTreeMap<Location, (FullHash, TransferProtoDB)>,
 }
 impl TokenCache {
     fn try_parse(content_type: &str, content: &[u8]) -> Result<Brc4, Brc4ParseErr> {
@@ -195,7 +195,8 @@ impl TokenCache {
                     owner: inc.owner,
                     proto,
                 });
-                self.all_transfers.insert(inc.location, proto);
+                self.all_transfers
+                    .insert(inc.location, TransferProtoDB::from_proto(proto, height));
                 return Some(proto);
             }
         };
@@ -273,7 +274,7 @@ impl TokenCache {
                             .map(|x| Some(*x))
                             .unwrap_or_else(|| valid_transfer.map(|x| Some(x.1)).unwrap_or(None))
                     };
-                    if let Some(TransferProto::Bel20 { tick, .. }) = proto {
+                    if let Some(TransferProtoDB { tick, .. }) = proto {
                         if let Some(recipient) = recipient {
                             users.insert((*recipient, tick));
                             if let Some(transfer) = valid_transfer {
@@ -452,7 +453,7 @@ impl TokenCache {
                     transfer_location,
                     recipient,
                 } => {
-                    let Some((sender, TransferProto::Bel20 { tick, amt })) =
+                    let Some((sender, TransferProtoDB { tick, amt, height })) =
                         self.valid_transfers.remove(&transfer_location)
                     else {
                         // skip cause transfer has been already spent
@@ -476,10 +477,7 @@ impl TokenCache {
                     let Some(token) = self.tokens.get_mut(&tick) else {
                         continue;
                     };
-                    let DeployProtoDB {
-                        transactions,
-                        ..
-                    } = &mut token.proto;
+                    let DeployProtoDB { transactions, .. } = &mut token.proto;
 
                     holders.decrease(old_key, old_account, amt);
                     old_account.transfers_count -= 1;
@@ -526,7 +524,7 @@ impl TokenCache {
                                 address: sender,
                                 location: transfer_location,
                             },
-                            TransferProto::Bel20 { tick, amt },
+                            TransferProtoDB { tick, amt, height },
                             recipient,
                         );
                     }
@@ -580,10 +578,7 @@ impl TokenCache {
                     self.valid_transfers
                         .into_iter()
                         .map(|(location, (address, proto))| {
-                            (
-                                AddressLocation { address, location },
-                                TransferProtoDB::from(proto),
-                            )
+                            (AddressLocation { address, location }, proto)
                         }),
                 );
         }

@@ -30,7 +30,7 @@ impl ReorgHistoryBlock {
 }
 
 pub struct ReorgCache {
-    blocks: BTreeMap<u64, ReorgHistoryBlock>,
+    blocks: BTreeMap<u32, ReorgHistoryBlock>,
     len: usize,
 }
 
@@ -42,7 +42,7 @@ impl ReorgCache {
         }
     }
 
-    pub fn new_block(&mut self, block_height: u64, last_history_id: u64) {
+    pub fn new_block(&mut self, block_height: u32, last_history_id: u64) {
         if self.blocks.len() == self.len {
             self.blocks.pop_first();
         }
@@ -103,7 +103,7 @@ impl ReorgCache {
     pub fn removed_transfer_token(
         &mut self,
         key: AddressLocation,
-        value: TransferProto,
+        value: TransferProtoDB,
         recipient: Option<FullHash>,
     ) {
         self.blocks
@@ -111,14 +111,10 @@ impl ReorgCache {
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::RestoreTrasferred(
-                key,
-                value.into(),
-                recipient,
-            ));
+            .push(TokenHistoryEntry::RestoreTrasferred(key, value, recipient));
     }
 
-    pub fn restore(&mut self, server: &Server, block_height: u64) -> anyhow::Result<()> {
+    pub fn restore(&mut self, server: &Server, block_height: u32) -> anyhow::Result<()> {
         while !self.blocks.is_empty() && block_height <= *self.blocks.last_key_value().unwrap().0 {
             let (height, data) = self.blocks.pop_last().anyhow()?;
 

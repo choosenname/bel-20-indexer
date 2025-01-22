@@ -22,7 +22,7 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
     let reorg_cache = Arc::new(parking_lot::Mutex::new(reorg::ReorgCache::new()));
 
     let tip_hash = server.client.best_block_hash().await?;
-    let tip_height = server.client.get_block_info(&tip_hash).await?.height as u64;
+    let tip_height = server.client.get_block_info(&tip_hash).await?.height as u32;
 
     let last_block = server.db.last_block.get(());
     let mut last_block = last_block.map(|x| x + 1).unwrap_or(1);
@@ -30,9 +30,9 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
     warn!("Blocks to sync: {}", tip_height - last_block);
 
     {
-        let progress = crate::utils::Progress::begin("Indexing", tip_height, last_block);
+        let progress = crate::utils::Progress::begin("Indexing", tip_height as _, last_block as _);
 
-        while last_block < tip_height - reorg::REORG_CACHE_MAX_LEN as u64 && !token.is_cancelled() {
+        while last_block < tip_height - reorg::REORG_CACHE_MAX_LEN as u32 && !token.is_cancelled() {
             parser::InitialIndexer::handle(last_block, server.clone(), None)
                 .await
                 .track()
@@ -59,7 +59,7 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
 }
 
 async fn new_fether(
-    last_block: u64,
+    last_block: u32,
     token: WaitToken,
     server: Arc<Server>,
     reorg_cache: Arc<parking_lot::Mutex<reorg::ReorgCache>>,
@@ -76,7 +76,7 @@ async fn new_fether(
 
         if current_tip != tip {
             let last_height = server.client.get_block_info(&tip).await?.height;
-            let mut current_height = last_height as u64 + 1;
+            let mut current_height = last_height as u32 + 1;
             let mut next_hash = server.client.get_block_hash(current_height).await?;
 
             let mut reorg_counter = 0;

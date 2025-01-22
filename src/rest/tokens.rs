@@ -206,10 +206,11 @@ pub async fn token_transfer_proof(
         .db
         .address_location_to_transfer
         .range(&from..&to, false)
-        .map(|(_, TransferProtoDB { tick, amt })| {
+        .map(|(_, TransferProtoDB { tick, amt, height })| {
             anyhow::Ok(TokenTransferProof {
                 amt,
                 tick: String::from_utf8(tick.to_vec()).anyhow()?,
+                height,
             })
         })
         .try_collect()
@@ -223,4 +224,5 @@ pub async fn token_transfer_proof(
 pub struct TokenTransferProof {
     pub amt: Fixed128,
     pub tick: String,
+    pub height: u32,
 }

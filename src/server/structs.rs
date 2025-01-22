@@ -3,8 +3,8 @@ use super::*;
 #[derive(Clone, Debug)]
 pub enum ServerEvent {
     NewHistory(AddressTokenIdEvent, HistoryValueEvent),
-    Reorg(u32, u64),
-    NewBlock(u64, sha256::Hash, BlockHash),
+    Reorg(u32, u32),
+    NewBlock(u32, sha256::Hash, BlockHash),
 }
 
 pub type RawServerEvent = Vec<(AddressTokenId, HistoryValue)>;
@@ -18,7 +18,7 @@ pub struct AddressTokenIdEvent {
 
 #[derive(Serialize, Debug, Clone, Deserialize)]
 pub struct HistoryValueEvent {
-    pub height: u64,
+    pub height: u32,
     pub action: TokenHistoryEvent,
 }
 

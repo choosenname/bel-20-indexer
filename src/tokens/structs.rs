@@ -131,7 +131,7 @@ pub enum TokenHistoryDB {
 
 #[derive(Serialize, Debug, Clone, Deserialize)]
 pub struct HistoryValue {
-    pub height: u64,
+    pub height: u32,
     pub action: TokenHistoryDB,
 }
 
@@ -223,33 +223,6 @@ pub struct TokenProtoRest {
     pub mint_count: u64,
     pub transfer_count: u64,
     pub holders: usize,
-}
-
-impl TokenProtoRest {
-    pub fn from_meta(value: TokenMeta, holders: &HashMap<TokenTick, usize>) -> Self {
-        let DeployProtoDB {
-            tick,
-            max,
-            lim,
-            dec,
-            supply,
-            mint_count,
-            transfer_count,
-            ..
-        } = value.proto;
-        let result = Self {
-            genesis: value.genesis,
-            tick: String::from_utf8_lossy(&tick).to_string(),
-            max,
-            lim,
-            dec,
-            supply,
-            mint_count,
-            transfer_count,
-            holders: holders.get(&tick).copied().unwrap_or_default(),
-        };
-        result
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq)]
@@ -629,14 +602,14 @@ impl From<AddressTokenIdEvent> for AddressTokenIdRest {
 pub struct HistoryRest {
     #[serde(flatten)]
     pub address_token: AddressTokenIdRest,
-    pub height: u64,
+    pub height: u32,
     #[serde(flatten)]
     pub action: TokenActionRest,
 }
 
 impl HistoryRest {
     pub async fn new(
-        height: u64,
+        height: u32,
         action: TokenHistoryDB,
         address_token: AddressTokenId,
         server: &Server,

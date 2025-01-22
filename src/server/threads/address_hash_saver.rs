@@ -10,7 +10,7 @@ pub struct AddressHasher {
 }
 
 pub struct AddressesToLoad {
-    pub height: u64,
+    pub height: u32,
     pub addresses: HashSet<ScriptBuf>,
 }
 

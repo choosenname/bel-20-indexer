@@ -10,7 +10,7 @@ pub struct Server {
     pub event_sender: tokio::sync::broadcast::Sender<ServerEvent>,
     pub raw_event_sender: kanal::Sender<RawServerEvent>,
     pub token: WaitToken,
-    pub last_indexed_address_height: Arc<tokio::sync::RwLock<u64>>,
+    pub last_indexed_address_height: Arc<tokio::sync::RwLock<u32>>,
     pub addr_tx: Arc<kanal::Sender<AddressesToLoad>>,
     pub client: Arc<AsyncClient>,
     pub holders: Arc<Holders>,
@@ -56,7 +56,7 @@ impl Server {
     pub async fn load_addresses(
         &self,
         keys: impl IntoIterator<Item = FullHash>,
-        height: u64,
+        height: u32,
     ) -> anyhow::Result<HashMap<FullHash, String>> {
         let mut counter = 0;
         while *self.last_indexed_address_height.read().await < height {
@@ -88,7 +88,7 @@ impl Server {
 
     pub async fn new_hash(
         &self,
-        height: u64,
+        height: u32,
         blockhash: BlockHash,
         history: &[(AddressTokenId, HistoryValue)],
     ) -> anyhow::Result<()> {
