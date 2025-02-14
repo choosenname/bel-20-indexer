@@ -124,8 +124,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
     {
         "genesis": "<inscription_id>",
         "tick": "<tick>",
-        "max": 1000000000,
-        "lim": 1000,
+        "max": "1000000000",
+        "lim": "1000",
         "dec": 18,
         "supply": "6000",
         "mint_count": 5,
@@ -168,8 +168,8 @@ This API provides endpoints to interact with addresses, tokens, and events. Belo
 {
   "id": 1,
   "type": "Deploy",
-  "max": 1000000,
-  "lim": 500000,
+  "max": "1000000",
+  "lim": "500000",
   "dec": 18,
   "address": "<address>",
   "txid": "<txid>",
