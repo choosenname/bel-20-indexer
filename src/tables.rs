@@ -1,7 +1,7 @@
 use super::*;
 
 generate_db_code! {
-    token_to_meta: TokenTick => UsingSerde<TokenMetaDB>,
+    token_to_meta: LowerCaseTick => UsingSerde<TokenMetaDB>,
     address_location_to_transfer: AddressLocation => UsingSerde<TransferProtoDB>,
     address_token_to_balance: AddressToken => UsingSerde<TokenBalance>,
     address_token_to_history: AddressTokenId => UsingSerde<HistoryValue>,
@@ -18,7 +18,7 @@ generate_db_code! {
 impl DB {
     pub fn load_token_accounts(
         &self,
-        keys: HashSet<(FullHash, [u8; 4])>,
+        keys: HashSet<(FullHash, LowerCaseTick)>,
     ) -> HashMap<AddressToken, TokenBalance> {
         let db_keys = keys
             .into_iter()

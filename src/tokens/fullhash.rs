@@ -7,6 +7,10 @@ use super::*;
 #[serde(transparent)]
 pub struct FullHash([u8; 32]);
 
+impl FullHash {
+    pub const ZERO: Self = Self([0; 32]);
+}
+
 impl_pebble!(FullHash = [u8; 32]);
 
 impl Deref for FullHash {

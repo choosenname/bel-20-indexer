@@ -134,18 +134,20 @@ impl ReorgCache {
                 for entry in data.token_history.into_iter().rev() {
                     match entry {
                         TokenHistoryEntry::RemoveDeployed(tick) => {
-                            to_remove_deployed.push(tick);
+                            to_remove_deployed.push(LowerCaseTick::from(tick));
                         }
                         TokenHistoryEntry::RemoveMint(receiver, amt) => {
-                            to_update_deployed.push(DeployedUpdate::Mint(receiver.token, amt));
+                            to_update_deployed
+                                .push(DeployedUpdate::Mint(receiver.token.clone(), amt));
                             to_remove_minted.push((receiver, amt));
                         }
                         TokenHistoryEntry::RemoveTransfer(location, receiver, amt) => {
-                            to_update_deployed.push(DeployedUpdate::Transfer(receiver.token));
+                            to_update_deployed
+                                .push(DeployedUpdate::Transfer(receiver.token.clone()));
                             to_remove_transfer.push((location, receiver, amt));
                         }
                         TokenHistoryEntry::RestoreTrasferred(key, value, recipient) => {
-                            to_update_deployed.push(DeployedUpdate::Transfered(value.tick));
+                            to_update_deployed.push(DeployedUpdate::Transfered(value.tick.into()));
                             to_restore_transferred.push((key, value, recipient));
                         }
                         TokenHistoryEntry::RemoveHistory(key) => {
@@ -179,7 +181,7 @@ impl ReorgCache {
                         .map(|x| match x {
                             DeployedUpdate::Mint(tick, _)
                             | DeployedUpdate::Transfer(tick)
-                            | DeployedUpdate::Transfered(tick) => *tick,
+                            | DeployedUpdate::Transfered(tick) => tick.clone(),
                         })
                         .unique()
                         .collect_vec();
@@ -196,7 +198,7 @@ impl ReorgCache {
 
                     let updated_values = to_update_deployed.into_iter().rev().map(|x| match x {
                         DeployedUpdate::Mint(tick, amt) => {
-                            let mut meta = *deploys.get(&tick).unwrap();
+                            let mut meta = deploys.get(&tick.clone()).unwrap().clone();
                             let DeployProtoDB {
                                 supply,
                                 mint_count,
@@ -209,7 +211,7 @@ impl ReorgCache {
                             (tick, meta)
                         }
                         DeployedUpdate::Transfer(tick) => {
-                            let mut meta = *deploys.get(&tick).unwrap();
+                            let mut meta = deploys.get(&tick.clone()).unwrap().clone();
                             let DeployProtoDB {
                                 transfer_count,
                                 transactions,
@@ -220,7 +222,7 @@ impl ReorgCache {
                             (tick, meta)
                         }
                         DeployedUpdate::Transfered(tick) => {
-                            let mut meta = *deploys.get(&tick).unwrap();
+                            let mut meta = deploys.get(&tick).unwrap().clone();
                             let DeployProtoDB { transactions, .. } = &mut meta.proto;
                             *transactions -= 1;
                             (tick, meta)
@@ -243,11 +245,11 @@ impl ReorgCache {
                             [
                                 Some(AddressToken {
                                     address: k.address,
-                                    token: v.tick,
+                                    token: v.tick.into(),
                                 }),
                                 recipient.map(|recipient| AddressToken {
                                     address: recipient,
-                                    token: v.tick,
+                                    token: v.tick.into(),
                                 }),
                             ]
                             .into_iter()
@@ -269,7 +271,7 @@ impl ReorgCache {
                 {
                     for (key, amt) in to_remove_minted.into_iter().rev() {
                         let account = accounts.get_mut(&key).unwrap();
-                        server.holders.decrease(key, account, amt);
+                        server.holders.decrease(&key, account, amt);
                         account.balance = account.balance.checked_sub(amt).anyhow()?;
                     }
 
@@ -293,24 +295,24 @@ impl ReorgCache {
                     for (k, v, recipient) in &to_restore_transferred {
                         let key = AddressToken {
                             address: k.address,
-                            token: v.tick,
+                            token: v.tick.into(),
                         };
 
                         let account = accounts.get_mut(&key).unwrap();
 
-                        server.holders.increase(key, account, v.amt);
+                        server.holders.increase(&key, account, v.amt);
                         account.transferable_balance += v.amt;
                         account.transfers_count += 1;
 
                         if let Some(recipient) = recipient {
                             let key = AddressToken {
                                 address: *recipient,
-                                token: v.tick,
+                                token: v.tick.into(),
                             };
 
                             let account = accounts.get_mut(&key).unwrap();
 
-                            server.holders.decrease(key, account, v.amt);
+                            server.holders.decrease(&key, account, v.amt);
                             account.balance = account.balance.checked_sub(v.amt).anyhow()?;
                         }
                     }
@@ -346,7 +348,7 @@ impl ReorgCache {
 }
 
 enum DeployedUpdate {
-    Mint(TokenTick, Fixed128),
-    Transfer(TokenTick),
-    Transfered(TokenTick),
+    Mint(LowerCaseTick, Fixed128),
+    Transfer(LowerCaseTick),
+    Transfered(LowerCaseTick),
 }

@@ -1,17 +1,19 @@
+use crate::Fixed128;
+
 use super::*;
 
 use super::proto::*;
 use super::structs::*;
 
-type Tickers = HashSet<TokenTick>;
-type Users = HashSet<(FullHash, TokenTick)>;
+type Tickers = HashSet<LowerCaseTick>;
+type Users = HashSet<(FullHash, LowerCaseTick)>;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum HistoryTokenAction {
     Deploy {
         tick: TokenTick,
-        max: u64,
-        lim: u64,
+        max: Fixed128,
+        lim: Fixed128,
         dec: u8,
         recipient: FullHash,
         txid: Txid,
@@ -44,10 +46,10 @@ pub enum HistoryTokenAction {
 impl HistoryTokenAction {
     pub fn tick(&self) -> TokenTick {
         match self {
-            HistoryTokenAction::Deploy { tick, .. } => *tick,
-            HistoryTokenAction::Mint { tick, .. } => *tick,
-            HistoryTokenAction::DeployTransfer { tick, .. } => *tick,
-            HistoryTokenAction::Send { tick, .. } => *tick,
+            HistoryTokenAction::Deploy { tick, .. }
+            | HistoryTokenAction::Mint { tick, .. }
+            | HistoryTokenAction::DeployTransfer { tick, .. }
+            | HistoryTokenAction::Send { tick, .. } => *tick,
         }
     }
 
@@ -71,7 +73,7 @@ impl HistoryTokenAction {
 #[derive(Clone, Default)]
 pub struct TokenCache {
     /// All tokens. Used to check if a transfer is valid. Used like a cache, loaded from db before parsing.
-    pub tokens: HashMap<TokenTick, TokenMeta>,
+    pub tokens: HashMap<LowerCaseTick, TokenMeta>,
 
     /// All token accounts. Used to check if a transfer is valid. Used like a cache, loaded from db before parsing.
     pub token_accounts: HashMap<AddressToken, TokenBalance>,
@@ -121,7 +123,10 @@ impl TokenCache {
                     } if !amt.is_zero() => Ok(brc4),
                     Brc4::Deploy {
                         proto: DeployProto::Bel20 { dec, lim, max, .. },
-                    } if *dec <= DeployProto::MAX_DEC && !lim.is_zero() && !max.is_zero() => {
+                    } if *dec <= DeployProto::MAX_DEC
+                        && !lim.unwrap_or(*max).is_zero()
+                        && !max.is_zero() =>
+                    {
                         Ok(brc4)
                     }
                     Brc4::Transfer {
@@ -167,7 +172,7 @@ impl TokenCache {
                         proto: DeployProtoDB {
                             tick,
                             max,
-                            lim,
+                            lim: lim.unwrap_or(max),
                             dec,
                             supply: Fixed128::ZERO,
                             transfer_count: 0,
@@ -193,10 +198,14 @@ impl TokenCache {
                 self.token_actions.push(TokenAction::Transfer {
                     location: inc.location,
                     owner: inc.owner,
-                    proto,
+                    proto: proto.clone(),
+                    txid: inc.location.outpoint.txid,
+                    vout: inc.location.outpoint.vout,
                 });
-                self.all_transfers
-                    .insert(inc.location, TransferProtoDB::from_proto(proto, height));
+                self.all_transfers.insert(
+                    inc.location,
+                    TransferProtoDB::from_proto(proto.clone(), height),
+                );
                 return Some(proto);
             }
         };
@@ -204,17 +213,21 @@ impl TokenCache {
         None
     }
 
-    pub fn trasferred(&mut self, location: Location, recipient: FullHash) {
+    pub fn trasferred(&mut self, location: Location, recipient: FullHash, txid: Txid, vout: u32) {
         self.token_actions.push(TokenAction::Transferred {
             transfer_location: location,
             recipient: Some(recipient),
+            txid,
+            vout,
         });
     }
 
-    pub fn burned_transfer(&mut self, location: Location) {
+    pub fn burned_transfer(&mut self, location: Location, txid: Txid, vout: u32) {
         self.token_actions.push(TokenAction::Transferred {
             transfer_location: location,
             recipient: None,
+            txid,
+            vout,
         });
     }
 
@@ -223,7 +236,7 @@ impl TokenCache {
 
         self.tokens = db
             .token_to_meta
-            .multi_get(tickers.iter().collect_vec())
+            .multi_get(tickers.iter())
             .into_iter()
             .zip(tickers)
             .filter_map(|(v, k)| v.map(|x| (k, TokenMeta::from(x))))
@@ -235,8 +248,8 @@ impl TokenCache {
     }
 
     fn fill_tickers_and_users(&mut self) -> (Tickers, Users) {
-        let mut tickers = HashSet::new();
-        let mut users = HashSet::new();
+        let mut tickers: Tickers = HashSet::new();
+        let mut users: Users = HashSet::new();
 
         for action in &self.token_actions {
             match action {
@@ -245,42 +258,44 @@ impl TokenCache {
                     ..
                 } => {
                     // Load ticks because we need to check if tick is deployed
-                    tickers.insert(*tick);
+                    tickers.insert(tick.into());
                 }
                 TokenAction::Mint {
                     owner,
                     proto: MintProto::Bel20 { tick, .. },
                     ..
                 } => {
-                    tickers.insert(*tick);
-                    users.insert((*owner, *tick));
+                    tickers.insert(tick.into());
+                    users.insert((*owner, tick.into()));
                 }
                 TokenAction::Transfer {
                     owner,
                     proto: TransferProto::Bel20 { tick, .. },
                     ..
                 } => {
-                    tickers.insert(*tick);
-                    users.insert((*owner, *tick));
+                    tickers.insert(tick.into());
+                    users.insert((*owner, tick.into()));
                 }
                 TokenAction::Transferred {
                     transfer_location,
                     recipient,
+                    ..
                 } => {
                     let valid_transfer = self.valid_transfers.get(transfer_location);
-                    let proto = {
-                        self.all_transfers
-                            .get(transfer_location)
-                            .map(|x| Some(*x))
-                            .unwrap_or_else(|| valid_transfer.map(|x| Some(x.1)).unwrap_or(None))
-                    };
+                    let proto = self
+                        .all_transfers
+                        .get(transfer_location)
+                        .map(|x| Some(x.clone()))
+                        .unwrap_or_else(|| {
+                            valid_transfer.map(|x| Some(x.1.clone())).unwrap_or(None)
+                        });
                     if let Some(TransferProtoDB { tick, .. }) = proto {
                         if let Some(recipient) = recipient {
-                            users.insert((*recipient, tick));
+                            users.insert((*recipient, tick.into()));
                             if let Some(transfer) = valid_transfer {
-                                users.insert((transfer.0, tick));
+                                users.insert((transfer.0, tick.into()));
                             }
-                            tickers.insert(tick);
+                            tickers.insert(tick.into());
                         }
                     }
                 }
@@ -309,8 +324,10 @@ impl TokenCache {
                         lim,
                         dec,
                         ..
-                    } = proto;
-                    if let std::collections::hash_map::Entry::Vacant(e) = self.tokens.entry(tick) {
+                    } = proto.clone();
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        self.tokens.entry(tick.into())
+                    {
                         e.insert(TokenMeta { genesis, proto });
 
                         history.push(HistoryTokenAction::Deploy {
@@ -335,7 +352,7 @@ impl TokenCache {
                     vout,
                 } => {
                     let MintProto::Bel20 { tick, amt } = proto;
-                    let Some(token) = self.tokens.get_mut(&tick) else {
+                    let Some(token) = self.tokens.get_mut(&tick.into()) else {
                         continue;
                     };
                     let DeployProtoDB {
@@ -365,17 +382,17 @@ impl TokenCache {
 
                     let key = AddressToken {
                         address: owner,
-                        token: tick,
+                        token: tick.into(),
                     };
 
                     holders.increase(
-                        key,
+                        &key,
                         self.token_accounts
                             .get(&key)
                             .unwrap_or(&TokenBalance::default()),
                         amt,
                     );
-                    self.token_accounts.entry(key).or_default().balance += amt;
+                    self.token_accounts.entry(key.clone()).or_default().balance += amt;
                     *mint_count += 1;
 
                     history.push(HistoryTokenAction::Mint {
@@ -394,6 +411,8 @@ impl TokenCache {
                     owner,
                     location,
                     proto,
+                    txid,
+                    vout,
                 } => {
                     let Some(data) = self.all_transfers.remove(&location) else {
                         // skip cause is it transfer already spent
@@ -402,7 +421,7 @@ impl TokenCache {
 
                     let TransferProto::Bel20 { tick, amt } = proto;
 
-                    let Some(token) = self.tokens.get_mut(&tick) else {
+                    let Some(token) = self.tokens.get_mut(&tick.into()) else {
                         continue;
                     };
                     let DeployProtoDB {
@@ -419,7 +438,7 @@ impl TokenCache {
 
                     let key = AddressToken {
                         address: owner,
-                        token: tick,
+                        token: tick.into(),
                     };
                     let Some(account) = self.token_accounts.get_mut(&key) else {
                         continue;
@@ -430,7 +449,7 @@ impl TokenCache {
                     }
 
                     if let Some(x) = reorg_cache.as_ref() {
-                        x.lock().added_transfer_token(location, key, amt);
+                        x.lock().added_transfer_token(location, key.clone(), amt);
                     }
 
                     account.balance -= amt;
@@ -438,11 +457,11 @@ impl TokenCache {
                     account.transferable_balance += amt;
 
                     history.push(HistoryTokenAction::DeployTransfer {
-                        tick: key.token,
+                        tick,
                         amt,
                         recipient: key.address,
-                        txid: location.outpoint.txid,
-                        vout: location.outpoint.vout,
+                        txid,
+                        vout,
                     });
 
                     self.valid_transfers.insert(location, (key.address, data));
@@ -452,6 +471,8 @@ impl TokenCache {
                 TokenAction::Transferred {
                     transfer_location,
                     recipient,
+                    txid,
+                    vout,
                 } => {
                     let Some((sender, TransferProtoDB { tick, amt, height })) =
                         self.valid_transfers.remove(&transfer_location)
@@ -460,13 +481,13 @@ impl TokenCache {
                         continue;
                     };
 
-                    if !self.tokens.contains_key(&tick) {
+                    if !self.tokens.contains_key(&tick.into()) {
                         unreachable!();
                     }
 
                     let old_key = AddressToken {
                         address: sender,
-                        token: tick,
+                        token: tick.into(),
                     };
 
                     let old_account = self.token_accounts.get_mut(&old_key).unwrap();
@@ -474,12 +495,12 @@ impl TokenCache {
                         panic!("Invalid transfer sender balance");
                     }
 
-                    let Some(token) = self.tokens.get_mut(&tick) else {
+                    let Some(token) = self.tokens.get_mut(&tick.into()) else {
                         continue;
                     };
                     let DeployProtoDB { transactions, .. } = &mut token.proto;
 
-                    holders.decrease(old_key, old_account, amt);
+                    holders.decrease(&old_key, old_account, amt);
                     old_account.transfers_count -= 1;
                     old_account.transferable_balance -= amt;
                     *transactions += 1;
@@ -487,11 +508,11 @@ impl TokenCache {
                     if let Some(recipient) = recipient {
                         let key = AddressToken {
                             address: recipient,
-                            token: tick,
+                            token: tick.into(),
                         };
 
                         holders.increase(
-                            key,
+                            &key,
                             self.token_accounts
                                 .get(&key)
                                 .unwrap_or(&TokenBalance::default()),
@@ -504,8 +525,8 @@ impl TokenCache {
                             tick,
                             recipient,
                             sender,
-                            txid: transfer_location.outpoint.txid,
-                            vout: transfer_location.outpoint.vout,
+                            txid,
+                            vout,
                         });
                     } else {
                         history.push(HistoryTokenAction::Send {
@@ -513,8 +534,8 @@ impl TokenCache {
                             amt,
                             recipient: sender,
                             sender,
-                            txid: transfer_location.outpoint.txid,
-                            vout: transfer_location.outpoint.vout,
+                            txid,
+                            vout,
                         });
                     }
 
@@ -547,7 +568,7 @@ impl TokenCache {
     }
 
     async fn _write_tokens_meta(
-        tokens: Vec<(TokenTick, TokenMeta)>,
+        tokens: Vec<(LowerCaseTick, TokenMeta)>,
         db: Arc<DB>,
     ) -> anyhow::Result<()> {
         if !tokens.is_empty() {

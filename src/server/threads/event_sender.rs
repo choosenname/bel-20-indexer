@@ -53,7 +53,7 @@ impl Handler for EventSender {
                     .send(ServerEvent::NewHistory(
                         AddressTokenIdEvent {
                             address: addresses.get(&k.address).unwrap().clone(),
-                            token: String::from_utf8_lossy(&k.token).to_string(),
+                            token: k.token,
                             id: k.id,
                         },
                         HistoryValueEvent::into_event(v, &addresses),

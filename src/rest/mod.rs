@@ -203,12 +203,8 @@ async fn subscribe(
         .tokens
         .unwrap_or_default()
         .into_iter()
-        .map(|x| {
-            let v: TokenTick = x.to_lowercase().as_bytes().try_into().anyhow()?;
-            anyhow::Ok(String::from_utf8_lossy(&v).to_string())
-        })
-        .collect::<Result<HashSet<_>, _>>()
-        .bad_request("Invalid token tick")?;
+        .map(LowerCaseTick::from)
+        .collect::<HashSet<_>>();
 
     {
         let mut rx = server.event_sender.subscribe();
@@ -225,7 +221,9 @@ async fn subscribe(
                                     continue;
                                 }
 
-                                if !tokens.is_empty() && !tokens.contains(&address_token.token) {
+                                if !tokens.is_empty()
+                                    && !tokens.contains(&address_token.token.into())
+                                {
                                     continue;
                                 }
 
@@ -305,11 +303,15 @@ async fn address_token_history(
             return Err("").bad_request("Limit exceeded");
         }
     }
-    let token: [u8; 4] = query
-        .tick
-        .as_bytes()
-        .try_into()
-        .bad_request("Invalid token length")?;
+    let token: LowerCaseTick = query.tick.into();
+
+    let deploy_proto = server
+        .db
+        .token_to_meta
+        .get(&token)
+        .not_found("Token not found")?;
+
+    let token = deploy_proto.proto.tick;
 
     let from = AddressTokenId {
         address: scripthash,
@@ -349,25 +351,33 @@ async fn address_tokens(
     let scripthash =
         to_scripthash("address", &script_str, *NETWORK).bad_request("Invalid address")?;
 
+    let mut ticks = HashMap::<LowerCaseTick, TokenTick>::new();
+
     let mut data = server
         .db
         .address_token_to_balance
         .range(
             &AddressToken {
                 address: scripthash,
-                token: [0; 4],
+                token: [0; 4].into(),
             }..=&AddressToken {
                 address: scripthash,
-                token: [u8::MAX; 4],
+                token: [u8::MAX; 4].into(),
             },
             false,
         )
-        .map(|(k, v)| TokenBalanceRest {
-            tick: String::from_utf8_lossy(&k.token).to_string(),
-            balance: v.balance,
-            transferable_balance: v.transferable_balance,
-            transfers_count: v.transfers_count,
-            transfers: vec![],
+        .map(|(k, v)| {
+            let tick = ticks
+                .entry(k.token.clone())
+                .or_insert_with(|| server.db.token_to_meta.get(&k.token).unwrap().proto.tick);
+
+            TokenBalanceRest {
+                tick: *tick,
+                balance: v.balance,
+                transferable_balance: v.transferable_balance,
+                transfers_count: v.transfers_count,
+                transfers: vec![],
+            }
         })
         .collect_vec();
 
@@ -387,14 +397,13 @@ async fn address_tokens(
     {
         transfers
             .entry(value.tick)
-            .and_modify(|x| x.push((key.location, value.into())))
+            .and_modify(|x| x.push((key.location, value.clone().into())))
             .or_insert(vec![(key.location, value.into())]);
     }
 
     for token in data.iter_mut() {
-        let tick: [u8; 4] = token.tick.as_bytes().try_into().unwrap();
         let transfers = transfers
-            .remove(&tick)
+            .remove(&token.tick)
             .unwrap_or_default()
             .into_iter()
             .map(|x| {

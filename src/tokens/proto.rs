@@ -1,3 +1,5 @@
+use crate::Fixed128;
+
 use super::*;
 
 use num_traits::FromPrimitive;
@@ -6,33 +8,59 @@ use serde::de::Error;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Protocol(pub Brc4Value, pub Option<Brc4ActionErr>);
 
-pub fn bel_20_decimal<'de, D>(deserializer: D) -> Result<Fixed128, D::Error>
+fn bel_20_validate<'de, D>(val: &str) -> Result<Fixed128, D::Error>
 where
-    D: Deserializer<'de>,
+    D: serde::Deserializer<'de>,
 {
-    let val = <&str>::deserialize(deserializer)?;
-
     if val.starts_with('+') | val.starts_with('-') {
         return Err(Error::custom("value cannot start from + or -"));
     }
-
     if val.starts_with('.') | val.ends_with('.') {
         return Err(Error::custom("value cannot start or end with ."));
     }
-
     if val.starts_with(' ') | val.ends_with(' ') {
         return Err(Error::custom("value cannot contain spaces"));
     }
+    match Fixed128::from_str(val) {
+        Ok(v) => {
+            if v > Fixed128::from(u64::MAX) {
+                Err(Error::custom("value is too large"))
+            } else {
+                Ok(v)
+            }
+        }
+        Err(e) => Err(Error::custom(e)),
+    }
+}
 
-    Fixed128::from_str(val).map_err(Error::custom)
+pub fn bel_20_decimal<'de, D>(deserializer: D) -> Result<Fixed128, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val = <&str as serde::Deserialize>::deserialize(deserializer)?;
+    bel_20_validate::<D>(val)
+}
+
+pub fn bel_20_option_decimal<'de, D>(deserializer: D) -> Result<Option<Fixed128>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val = <Option<&str> as serde::Deserialize>::deserialize(deserializer)?;
+    val.map(|x| bel_20_validate::<D>(x)).transpose()
 }
 
 pub fn bel_20_tick<'de, D>(deserializer: D) -> Result<TokenTick, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let val = <&str as serde::Deserialize>::deserialize(deserializer)?.to_lowercase();
-    val.as_bytes().try_into().map_err(Error::custom)
+    let val = <Cow<str> as serde::Deserialize>::deserialize(deserializer)?;
+    let val = val.as_bytes().to_vec();
+
+    if val.len() != 4 {
+        return Err(Error::custom("invalid token tick"));
+    }
+
+    Ok(val.try_into().unwrap())
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -73,21 +101,21 @@ pub enum DeployProto {
     Bel20 {
         #[serde(deserialize_with = "bel_20_tick")]
         tick: TokenTick,
-        #[serde(with = ":: serde_with :: As :: < DisplayFromStr >")]
-        max: u64,
-        #[serde(with = ":: serde_with :: As :: < DisplayFromStr >")]
-        lim: u64,
+        #[serde(deserialize_with = "bel_20_decimal")]
+        max: Fixed128,
+        #[serde(default, deserialize_with = "bel_20_option_decimal")]
+        lim: Option<Fixed128>,
         #[serde(with = ":: serde_with :: As :: < DisplayFromStr >")]
         #[serde(default = "DeployProto::default_dec")]
         dec: u8,
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DeployProtoDB {
     pub tick: TokenTick,
-    pub max: u64,
-    pub lim: u64,
+    pub max: Fixed128,
+    pub lim: Fixed128,
     pub dec: u8,
     pub supply: Fixed128,
     pub transfer_count: u64,
@@ -104,7 +132,7 @@ impl DeployProtoDB {
     }
     pub fn mint_percent(&self) -> Fixed128 {
         (rust_decimal::Decimal::from_u64(100).unwrap() * self.supply.into_decimal()
-            / rust_decimal::Decimal::from_u64(self.max).unwrap())
+            / self.max.into_decimal())
         .into()
     }
 }
@@ -117,7 +145,7 @@ impl DeployProto {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "p")]
 #[serde_as]
 pub enum TransferProto {
@@ -130,7 +158,7 @@ pub enum TransferProto {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TransferProtoDB {
     pub tick: TokenTick,
     pub amt: Fixed128,
@@ -146,15 +174,15 @@ impl TransferProtoDB {
 }
 
 impl From<TransferProtoDB> for TransferProto {
-    fn from(value: TransferProtoDB) -> Self {
+    fn from(v: TransferProtoDB) -> Self {
         TransferProto::Bel20 {
-            tick: value.tick,
-            amt: value.amt,
+            tick: v.tick,
+            amt: v.amt,
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Brc4Value {
     Mint {
         tick: TokenTick,
@@ -166,8 +194,8 @@ pub enum Brc4Value {
     },
     Deploy {
         tick: TokenTick,
-        max: u64,
-        lim: u64,
+        max: Fixed128,
+        lim: Fixed128,
         dec: u8,
     },
 }
@@ -184,7 +212,7 @@ impl From<&DeployProto> for Brc4Value {
             } => Brc4Value::Deploy {
                 tick: *tick,
                 max: *max,
-                lim: *lim,
+                lim: (*lim).unwrap_or(*max),
                 dec: *dec,
             },
         }

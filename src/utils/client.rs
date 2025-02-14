@@ -78,7 +78,7 @@ impl AsyncClient {
 }
 
 fn deserialize_hex<T: Decodable>(hex: &str) -> anyhow::Result<T> {
-    let mut reader = HexIterator::new(&hex)?;
+    let mut reader = HexIterator::new(hex)?;
     let object = Decodable::consensus_decode(&mut reader)?;
     if reader.read_u8().is_ok() {
         anyhow::bail!("data not consumed entirely when explicitly deserializing")

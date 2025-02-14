@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+use crate::{
+    tokens::{InscriptionId, LowerCaseTick, TokenTick},
+    NON_STANDARD_ADDRESS,
+};
+
 use super::{
     utils::{first_page, page_size_default, to_scripthash, validate_tick},
     AddressLocation, Fixed128, TransferProtoDB, BAD_PARAMS, INTERNAL, NETWORK,
@@ -15,24 +20,24 @@ use nintypes::common::inscriptions::Outpoint;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use super::{ApiResult, Server, TokenTick, BAD_REQUEST, NOT_FOUND};
+use super::{ApiResult, Server, BAD_REQUEST, NOT_FOUND};
 
 #[derive(Serialize, Deserialize)]
 pub struct Token {
     pub height: u32,
     pub created: u32,
-    pub tick: String,
-    pub genesis: String,
+    pub tick: TokenTick,
+    pub genesis: InscriptionId,
     pub deployer: String,
 
     pub transactions: u32,
     pub holders: u32,
-    pub supply: String,
+    pub supply: Fixed128,
     pub mint_percent: String,
     pub completed: bool,
 
-    pub max: u64,
-    pub lim: u64,
+    pub max: Fixed128,
+    pub lim: Fixed128,
     pub dec: u8,
 }
 
@@ -47,11 +52,12 @@ pub async fn token(
     Query(args): Query<TokenArgs>,
 ) -> ApiResult<impl IntoResponse> {
     args.validate().bad_request(BAD_REQUEST)?;
-    let tick: TokenTick = args.tick.to_lowercase().as_bytes().try_into().unwrap();
+    let tick: LowerCaseTick = args.tick.into();
+    let ref_tick = &tick;
     let token = back
         .db
         .token_to_meta
-        .get(tick)
+        .get(ref_tick.clone())
         .map(|v| Token {
             height: v.proto.height,
             created: v.proto.created,
@@ -59,12 +65,12 @@ pub async fn token(
                 .db
                 .fullhash_to_address
                 .get(v.proto.deployer)
-                .unwrap_or("Not found".to_string()),
+                .unwrap_or(NON_STANDARD_ADDRESS.to_string()),
             transactions: v.proto.transactions,
-            holders: back.holders.holders_by_tick(&tick).unwrap_or(0) as u32,
-            tick: String::from_utf8_lossy(&tick).to_string(),
-            genesis: v.genesis.to_string(),
-            supply: v.proto.supply.to_string(),
+            holders: back.holders.holders_by_tick(ref_tick).unwrap_or(0) as u32,
+            tick: v.proto.tick,
+            genesis: v.genesis,
+            supply: v.proto.supply,
             mint_percent: v.proto.mint_percent().to_string(),
             completed: v.proto.is_completed(),
             max: v.proto.max,
@@ -119,15 +125,15 @@ pub struct TokensArgs {
 }
 
 pub async fn tokens(
-    State(back): State<Arc<Server>>,
+    State(server): State<Arc<Server>>,
     Query(args): Query<TokensArgs>,
 ) -> ApiResult<impl IntoResponse> {
     args.validate().bad_request(BAD_PARAMS)?;
     let search = args.search.map(|x| x.to_lowercase().as_bytes().to_vec());
-    // let tokens = backend.tokens.read();
-    let tokens = &back.db.token_to_meta;
 
-    let iter = tokens
+    let iter = server
+        .db
+        .token_to_meta
         .iter()
         .filter(|x| match args.filter_by {
             FilterBy::All => true,
@@ -139,7 +145,7 @@ pub async fn tokens(
             _ => true,
         });
 
-    let stats = back.holders.stats();
+    let stats = server.holders.stats();
     let all = match args.sort_by {
         SortBy::DeployTimeAsc => iter.sorted_by_key(|(_, v)| v.proto.created).collect_vec(),
         SortBy::DeployTimeDesc => iter
@@ -170,16 +176,16 @@ pub async fn tokens(
             height: v.proto.height,
             created: v.proto.created,
             mint_percent: v.proto.mint_percent().to_string(),
-            tick: String::from_utf8_lossy(tick).to_string(),
-            genesis: v.genesis.to_string(),
-            deployer: back
+            tick: v.proto.tick,
+            genesis: v.genesis,
+            deployer: server
                 .db
                 .fullhash_to_address
                 .get(v.proto.deployer)
-                .unwrap_or("Not found".to_string()),
+                .unwrap_or(NON_STANDARD_ADDRESS.to_string()),
             transactions: v.proto.transactions,
-            holders: back.holders.holders_by_tick(tick).unwrap_or(0) as u32,
-            supply: v.proto.supply.to_string(),
+            holders: server.holders.holders_by_tick(tick).unwrap_or(0) as u32,
+            supply: v.proto.supply,
             completed: v.proto.is_completed(),
             max: v.proto.max,
             lim: v.proto.lim,
@@ -209,7 +215,7 @@ pub async fn token_transfer_proof(
         .map(|(_, TransferProtoDB { tick, amt, height })| {
             anyhow::Ok(TokenTransferProof {
                 amt,
-                tick: String::from_utf8(tick.to_vec()).anyhow()?,
+                tick: tick.to_string(),
                 height,
             })
         })

@@ -24,6 +24,7 @@ impl InitialIndexer {
                 continue;
             }
             let mut inscription_idx = 0;
+            let txid = tx.txid();
 
             let inputs_cum = InscriptionSearcher::calc_offsets(tx, prevouts)
                 .expect("failed to find all txos to calculate offsets");
@@ -41,7 +42,7 @@ impl InitialIndexer {
                                 offset: u64::MAX,
                             },
                         )
-                        .map(|(k, (address, proto))| (*k, (*address, *proto))),
+                        .map(|(k, (address, proto))| (*k, (*address, proto.clone()))),
                 );
 
                 for &(location, _) in &transfers {
@@ -54,11 +55,11 @@ impl InitialIndexer {
                         &tx.output,
                     ) {
                         if tx.output[vout as usize].script_pubkey.is_op_return() {
-                            token_cache.burned_transfer(location);
+                            token_cache.burned_transfer(location, txid, vout);
                         } else {
                             let owner =
                                 tx.output[vout as usize].script_pubkey.compute_script_hash();
-                            token_cache.trasferred(location, owner);
+                            token_cache.trasferred(location, owner, txid, vout);
                         };
                     } else {
                         token_cache.trasferred(
@@ -68,6 +69,8 @@ impl InitialIndexer {
                                 .unwrap()
                                 .script_pubkey
                                 .compute_script_hash(),
+                            tx.txid(),
+                            0,
                         );
                     }
                 }
@@ -100,15 +103,20 @@ impl InitialIndexer {
     ) -> anyhow::Result<()> {
         let current_hash = server.client.get_block_hash(block_height).await?;
         let mut last_history_id = server.db.last_history_id.get(()).unwrap_or_default();
+
         if let Some(cache) = reorg_cache.as_ref() {
             cache.lock().new_block(block_height, last_history_id);
         }
+
         server.db.block_hashes.set(block_height, current_hash);
+
         if reorg_cache.is_some() {
             debug!("Syncing block: {} ({})", current_hash, block_height);
         }
+
         let block = server.client.get_block(&current_hash).await?;
         let created = block.header.time;
+
         match server.addr_tx.send(server::threads::AddressesToLoad {
             height: block_height,
             addresses: block
@@ -125,6 +133,7 @@ impl InitialIndexer {
                 }
             }
         }
+
         let prevouts = block
             .txdata
             .iter()
@@ -141,22 +150,28 @@ impl InitialIndexer {
                 })
             })
             .filter(|x| !x.1.script_pubkey.is_provably_unspendable());
+
         server.db.prevouts.extend(prevouts);
+
         if block_height < *START_HEIGHT {
             server.db.last_block.set((), block_height);
             return Ok(());
         }
+
         if block.txdata.len() == 1 {
             server.db.last_block.set((), block_height);
             return server.new_hash(block_height, current_hash, &[]).await;
         }
+
         let mut token_cache = TokenCache::default();
         let prevouts = utils::load_prevouts_for_block(server.db.clone(), &block.txdata)?;
+
         if let Some(cache) = reorg_cache.as_ref() {
             prevouts.iter().for_each(|(key, value)| {
                 cache.lock().removed_prevout(*key, value.clone());
             });
         }
+
         token_cache.valid_transfers.extend(
             server.db.load_transfers(
                 prevouts
@@ -171,6 +186,7 @@ impl InitialIndexer {
                     .collect(),
             ),
         );
+
         Self::parse_block(
             block_height,
             created,
@@ -178,7 +194,9 @@ impl InitialIndexer {
             &prevouts,
             &mut token_cache,
         );
+
         token_cache.load_tokens_data(&server.db)?;
+
         let history = token_cache
             .process_token_actions(reorg_cache.clone(), &server.holders)
             .into_iter()
@@ -312,7 +330,7 @@ impl InitialIndexer {
                                 vout: payload.input_idx as u32,
                             },
                         },
-                        owner: [0; 32].into(),
+                        owner: FullHash::ZERO,
                         value: 0,
                         leaked: false,
                     };
