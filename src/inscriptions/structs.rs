@@ -1,4 +1,5 @@
 use super::*;
+use crate::inscriptions::types::Outpoint;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Inscription {
@@ -297,7 +298,7 @@ impl InscriptionParser {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy)]
 pub struct Location {
-    pub outpoint: OutPoint,
+    pub outpoint: Outpoint,
     pub offset: u64,
 }
 
@@ -305,8 +306,8 @@ impl Location {
     pub fn zero() -> Self {
         Self {
             offset: 0,
-            outpoint: OutPoint {
-                txid: Txid::all_zeros(),
+            outpoint: Outpoint {
+                txid: [0; 32],
                 vout: 0,
             },
         }
@@ -345,7 +346,7 @@ impl FromStr for Location {
 
         Ok(Self {
             offset,
-            outpoint: OutPoint { txid, vout },
+            outpoint: Outpoint { txid, vout },
         })
     }
 }

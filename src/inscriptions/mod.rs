@@ -9,6 +9,7 @@ mod searcher;
 mod structs;
 mod tag;
 mod utils;
+pub mod types;
 
 use envelope::{ParsedEnvelope, RawEnvelope};
 use searcher::InscriptionSearcher;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::inscriptions::types::{Outpoint, TokenHistory, TokenHistoryData};
 
 pub struct ParseInscription<'a> {
     tx: &'a Transaction,
@@ -13,8 +14,8 @@ impl InitialIndexer {
     fn parse_block(
         height: u32,
         created: u32,
-        txs: &[Transaction],
-        prevouts: &HashMap<OutPoint, TxOut>,
+        txs: &[TokenHistory],
+        prevouts: &HashMap<Outpoint, TokenHistory>,
         token_cache: &mut TokenCache,
     ) {
         let mut transfers = vec![];
@@ -97,12 +98,13 @@ impl InitialIndexer {
     }
 
     pub async fn handle(
-        block_height: u32,
+        token_history_data: TokenHistoryData,
         server: Arc<Server>,
         reorg_cache: Option<Arc<parking_lot::Mutex<crate::reorg::ReorgCache>>>,
     ) -> anyhow::Result<()> {
-        let current_hash = server.client.get_block_hash(block_height).await?;
+        let current_hash = token_history_data.block_info.block_hash;
         let mut last_history_id = server.db.last_history_id.get(()).unwrap_or_default();
+        let block_height = token_history_data.block_info.height;
 
         if let Some(cache) = reorg_cache.as_ref() {
             cache.lock().new_block(block_height, last_history_id);
@@ -114,17 +116,17 @@ impl InitialIndexer {
             debug!("Syncing block: {} ({})", current_hash, block_height);
         }
 
-        let block = server.client.get_block(&current_hash).await?;
-        let created = block.header.time;
+        let block = token_history_data;
+        let created = block.block_info.created;
 
         match server.addr_tx.send(server::threads::AddressesToLoad {
             height: block_height,
             addresses: block
-                .txdata
+                .token_history
                 .iter()
-                .flat_map(|x| &x.output)
-                .map(|x| x.script_pubkey.clone())
-                .collect(),
+                .flat_map(|x| vec![x.from.clone(), x.to.clone()])
+                .collec
+            t(),
         }) {
             Ok(_) => {}
             _ => {
@@ -134,22 +136,9 @@ impl InitialIndexer {
             }
         }
 
-        let prevouts = block
-            .txdata
-            .iter()
-            .flat_map(|x| {
-                let txid = x.txid();
-                x.output.iter().enumerate().map(move |(idx, vout)| {
-                    (
-                        OutPoint {
-                            txid,
-                            vout: idx as u32,
-                        },
-                        vout,
-                    )
-                })
-            })
-            .filter(|x| !x.1.script_pubkey.is_provably_unspendable());
+        let prevouts = block.token_history.iter().map(|history| {
+            (history.to_location.outpoint, history.clone())
+        });
 
         server.db.prevouts.extend(prevouts);
 
@@ -158,13 +147,13 @@ impl InitialIndexer {
             return Ok(());
         }
 
-        if block.txdata.len() == 1 {
+        if block.token_history.len() == 1 { // todo .is_empty()
             server.db.last_block.set((), block_height);
             return server.new_hash(block_height, current_hash, &[]).await;
         }
 
         let mut token_cache = TokenCache::default();
-        let prevouts = utils::load_prevouts_for_block(server.db.clone(), &block.txdata)?;
+        let prevouts = utils::load_prevouts_for_block(server.db.clone(), &block.token_history)?;
 
         if let Some(cache) = reorg_cache.as_ref() {
             prevouts.iter().for_each(|(key, value)| {
@@ -177,7 +166,7 @@ impl InitialIndexer {
                 prevouts
                     .iter()
                     .map(|(k, v)| AddressLocation {
-                        address: v.script_pubkey.compute_script_hash(),
+                        address: v.to.compute_script_hash(),
                         location: Location {
                             outpoint: *k,
                             offset: 0,
@@ -190,7 +179,7 @@ impl InitialIndexer {
         Self::parse_block(
             block_height,
             created,
-            &block.txdata,
+            &block.token_history,
             &prevouts,
             &mut token_cache,
         );

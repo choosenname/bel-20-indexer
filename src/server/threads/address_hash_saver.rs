@@ -11,7 +11,7 @@ pub struct AddressHasher {
 
 pub struct AddressesToLoad {
     pub height: u32,
-    pub addresses: HashSet<ScriptBuf>,
+    pub addresses: HashSet<String>,
 }
 
 impl Handler for AddressHasher {
@@ -49,10 +49,7 @@ impl Handler for AddressHasher {
                 .into_iter()
                 .flat_map(|x| x.addresses)
                 .unique()
-                .filter_map(|x| {
-                    x.to_address_str(*NETWORK)
-                        .map(|v| (x.compute_script_hash(), v))
-                });
+                .map(|x| (x.compute_script_hash(), x));
 
             let db = self.server.db.clone();
 

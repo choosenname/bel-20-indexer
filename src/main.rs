@@ -45,7 +45,6 @@ use {
     tokens::*,
     tracing::info,
     tracing_indicatif::span_ext::IndicatifSpanExt,
-    utils::AsyncClient,
 };
 
 mod db;

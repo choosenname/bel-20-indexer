@@ -1,3 +1,4 @@
+use crate::inscriptions::types::{Outpoint, TokenHistory};
 use super::*;
 
 pub const REORG_CACHE_MAX_LEN: usize = 30;
@@ -11,7 +12,7 @@ enum TokenHistoryEntry {
     /// Key and value of removed valid transfer
     RestoreTrasferred(AddressLocation, TransferProtoDB, Option<FullHash>),
     RemoveHistory(AddressTokenId),
-    RestorePrevout(OutPoint, TxOut),
+    RestorePrevout(Outpoint, TokenHistory),
 }
 
 #[derive(Default)]
@@ -77,7 +78,7 @@ impl ReorgCache {
             .push(TokenHistoryEntry::RemoveHistory(key));
     }
 
-    pub fn removed_prevout(&mut self, key: OutPoint, value: TxOut) {
+    pub fn removed_prevout(&mut self, key: Outpoint, value: TokenHistory) {
         self.blocks
             .last_entry()
             .unwrap()
