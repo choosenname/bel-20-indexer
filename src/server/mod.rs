@@ -12,7 +12,7 @@ pub struct Server {
     pub token: WaitToken,
     pub last_indexed_address_height: Arc<tokio::sync::RwLock<u32>>,
     pub addr_tx: Arc<kanal::Sender<AddressesToLoad>>,
-    pub client: electrs_client::Config,
+    pub client: Arc<AsyncClient>,
     pub holders: Arc<Holders>,
 }
 

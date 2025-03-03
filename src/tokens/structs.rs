@@ -1,9 +1,9 @@
 use std::ops::RangeInclusive;
 
-use super::*;
-use crate::inscriptions::types::Outpoint;
 use bellscoin::consensus;
 use server::{AddressTokenIdEvent, HistoryValueEvent};
+
+use super::*;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct AddressToken {
@@ -247,7 +247,7 @@ pub struct AddressLocation {
 }
 
 impl AddressLocation {
-    pub fn search(address: FullHash, outpoint: Option<Outpoint>) -> RangeInclusive<Self> {
+    pub fn search(address: FullHash, outpoint: Option<OutPoint>) -> RangeInclusive<Self> {
         if let Some(outpoint) = outpoint {
             return Self::search_with_outpoint(address, outpoint);
         }
@@ -255,8 +255,8 @@ impl AddressLocation {
         let start = Self {
             address,
             location: Location {
-                outpoint: Outpoint {
-                    txid: [0; 32],
+                outpoint: OutPoint {
+                    txid: Txid::all_zeros(),
                     vout: 0,
                 },
                 offset: 0,
@@ -265,8 +265,8 @@ impl AddressLocation {
         let end = Self {
             address,
             location: Location {
-                outpoint: Outpoint {
-                    txid: [u8::MAX; 32],
+                outpoint: OutPoint {
+                    txid: Txid::from_byte_array([u8::MAX; 32]),
                     vout: u32::MAX,
                 },
                 offset: u64::MAX,
@@ -276,7 +276,7 @@ impl AddressLocation {
         start..=end
     }
 
-    fn search_with_outpoint(address: FullHash, outpoint: Outpoint) -> RangeInclusive<Self> {
+    fn search_with_outpoint(address: FullHash, outpoint: OutPoint) -> RangeInclusive<Self> {
         let start = Self {
             address,
             location: Location {
@@ -521,7 +521,7 @@ pub enum ParsedTokenAction {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TokenTransfer {
-    pub outpoint: Outpoint,
+    pub outpoint: OutPoint,
     pub amount: Fixed128,
 }
 

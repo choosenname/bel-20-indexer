@@ -1,5 +1,4 @@
 use super::*;
-use crate::inscriptions::types::{Outpoint, TokenHistory};
 
 pub trait ScriptToAddr {
     fn to_address_str(&self, network: Network) -> Option<String>;
@@ -23,12 +22,12 @@ impl ScriptToAddr for &bellscoin::ScriptBuf {
 
 pub fn load_prevouts_for_block(
     db: Arc<DB>,
-    token_history: &[types::TokenHistory],
-) -> anyhow::Result<HashMap<Outpoint, TokenHistory>> {
-    let txids_keys = token_history
+    txs: &[Transaction],
+) -> anyhow::Result<HashMap<OutPoint, TxOut>> {
+    let txids_keys = txs
         .iter()
         .skip(1)
-        .map(|history| history.to_location.outpoint)
+        .flat_map(|x| x.input.iter().map(|x| x.previous_output))
         .unique()
         .collect_vec();
 
