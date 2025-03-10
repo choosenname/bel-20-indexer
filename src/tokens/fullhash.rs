@@ -84,3 +84,9 @@ impl ComputeScriptHash for &'static str {
         compute_script_hash(self.as_bytes())
     }
 }
+
+impl ComputeScriptHash for String {
+    fn compute_script_hash(&self) -> FullHash {
+        compute_script_hash(self.as_bytes())
+    }
+}

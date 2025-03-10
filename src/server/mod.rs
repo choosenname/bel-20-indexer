@@ -12,7 +12,7 @@ pub struct Server {
     pub token: WaitToken,
     pub last_indexed_address_height: Arc<tokio::sync::RwLock<u32>>,
     pub addr_tx: Arc<kanal::Sender<AddressesToLoad>>,
-    pub client: Arc<AsyncClient>,
+    pub client: electrs_client::Config,
     pub holders: Arc<Holders>,
 }
 
@@ -32,15 +32,12 @@ impl Server {
         let db = Arc::new(DB::open(db_path));
 
         let server = Self {
-            client: Arc::new(
-                AsyncClient::new(
-                    &URL,
-                    Some(USER.to_string()),
-                    Some(PASS.to_string()),
-                    token.clone(),
-                )
-                .await?,
-            ),
+            client: electrs_client::Config {
+                url: URL.to_string(),
+                user: USER.to_string(),
+                password: PASS.to_string(),
+                reorgs_path: Some("./reorg".to_string()),
+            },
             addr_tx: Arc::new(addr_tx),
             holders: Arc::new(Holders::init(&db)),
             db,
