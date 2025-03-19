@@ -1,10 +1,10 @@
+use nintondo_dogecoin::{opcodes, script};
+use nintondo_dogecoin::script::Instruction::{Op, PushBytes};
 use super::*;
 
 pub type RawEnvelope = Envelope<Vec<Vec<u8>>>;
 pub type ParsedEnvelope = Envelope<Inscription>;
 type Result<T> = std::result::Result<T, script::Error>;
-
-use bellscoin::blockdata::script::Instruction::{Op, PushBytes};
 
 #[derive(Default, PartialEq, Clone, Serialize, Deserialize, Debug, Eq)]
 pub struct Envelope<T> {

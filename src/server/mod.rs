@@ -36,7 +36,7 @@ impl Server {
                 url: URL.to_string(),
                 user: USER.to_string(),
                 password: PASS.to_string(),
-                reorgs_path: Some("./reorg".to_string()),
+                reorgs_path: None,
             },
             addr_tx: Arc::new(addr_tx),
             holders: Arc::new(Holders::init(&db)),

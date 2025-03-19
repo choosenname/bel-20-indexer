@@ -14,17 +14,18 @@ enum TokenHistoryEntry {
     RestorePrevout(OutPoint, TxOut),
 }
 
-#[derive(Default)]
 struct ReorgHistoryBlock {
     token_history: Vec<TokenHistoryEntry>,
     last_history_id: u64,
+    block_header: BlockHeader
 }
 
 impl ReorgHistoryBlock {
-    fn new(last_history_id: u64) -> Self {
+    fn new(block_header: BlockHeader, last_history_id: u64) -> Self {
         Self {
             last_history_id,
-            ..Default::default()
+            block_header,
+            token_history: vec![],
         }
     }
 }
@@ -42,12 +43,16 @@ impl ReorgCache {
         }
     }
 
-    pub fn new_block(&mut self, block_height: u32, last_history_id: u64) {
+    pub fn get_blocks_headers(&self) -> Vec<BlockHeader> {
+        self.blocks.values().map(|x| x.block_header.clone()).collect()
+    }
+
+    pub fn new_block(&mut self,  block_header: BlockHeader,  last_history_id: u64) {
         if self.blocks.len() == self.len {
             self.blocks.pop_first();
         }
         self.blocks
-            .insert(block_height, ReorgHistoryBlock::new(last_history_id));
+            .insert(block_header.number, ReorgHistoryBlock::new(block_header, last_history_id));
     }
 
     pub fn added_deployed_token(&mut self, tick: TokenTick) {

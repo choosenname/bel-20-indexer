@@ -1,5 +1,6 @@
 use super::*;
 use crate::inscriptions::types::{HistoryLocation, Outpoint, TokenHistory, TokenHistoryData};
+use nintondo_dogecoin::Address;
 
 pub struct InitialIndexer {}
 
@@ -34,7 +35,11 @@ impl InitialIndexer {
         let mut inscription_idx = 0;
         for th in ths {
             let location = th.to_location.into();
-            let owner = th.to.compute_script_hash();
+            let owner = Address::from_str(&th.to)
+                .unwrap() // todo remove unwrap
+                .payload
+                .script_pubkey()
+                .compute_script_hash();
             let txid = TxidN(th.from_location.outpoint.txid).into();
             let vout = th.from_location.outpoint.vout;
 
@@ -60,7 +65,11 @@ impl InitialIndexer {
                             mint_count: 0,
                             height,
                             created,
-                            deployer: th.from.compute_script_hash(),
+                            deployer: Address::from_str(&th.from)
+                                .unwrap() //todo remove unwrap
+                                .payload
+                                .script_pubkey()
+                                .compute_script_hash(),
                             transactions: 1,
                         },
                         owner,
@@ -103,12 +112,13 @@ impl InitialIndexer {
         server: Arc<Server>,
         reorg_cache: Option<Arc<parking_lot::Mutex<crate::reorg::ReorgCache>>>,
     ) -> anyhow::Result<()> {
-        let block_height = token_history_data.block_info.height;
-        let current_hash = token_history_data.block_info.block_hash;
+        let block_info = token_history_data.block_info;
+        let block_height = block_info.height;
+        let current_hash = block_info.block_hash;
         let mut last_history_id = server.db.last_history_id.get(()).unwrap_or_default();
 
         if let Some(cache) = reorg_cache.as_ref() {
-            cache.lock().new_block(block_height, last_history_id);
+            cache.lock().new_block(block_info.into(), last_history_id);
         }
 
         server.db.block_hashes.set(block_height, current_hash);
@@ -160,7 +170,11 @@ impl InitialIndexer {
                         )
                     })
                     .map(|k| AddressLocation {
-                        address: k.to.compute_script_hash(),
+                        address: Address::from_str(&k.to)
+                            .unwrap()
+                            .payload
+                            .script_pubkey()
+                            .compute_script_hash(), //todo remove unwrap
                         location: Location {
                             outpoint: k.to_location.outpoint.into(),
                             offset: 0,

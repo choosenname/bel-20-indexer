@@ -1,4 +1,6 @@
 use super::*;
+use nintondo_dogecoin::hashes::Hash;
+use nintondo_dogecoin::{OutPoint, Transaction, Txid, script};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Inscription {
@@ -40,9 +42,9 @@ impl Inscription {
             return vec![ParsedInscription::None];
         }
 
-        vec![InscriptionParser::parse(vec![tx.input[input_idx]
-            .script_sig
-            .as_script()])]
+        vec![InscriptionParser::parse(vec![
+            tx.input[input_idx].script_sig.as_script(),
+        ])]
     }
 
     pub fn into_body(self) -> Option<Vec<u8>> {
@@ -295,7 +297,9 @@ impl InscriptionParser {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, PartialEq, Eq, core::hash::Hash, Ord, PartialOrd, Copy,
+)]
 pub struct Location {
     pub outpoint: OutPoint,
     pub offset: u64,

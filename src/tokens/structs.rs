@@ -1,9 +1,41 @@
+use nintondo_dogecoin::consensus;
+use nintondo_dogecoin::hashes::hex::Error;
+use server::{AddressTokenIdEvent, HistoryValueEvent};
 use std::ops::RangeInclusive;
 
-use bellscoin::consensus;
-use server::{AddressTokenIdEvent, HistoryValueEvent};
-
 use super::*;
+
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Default)]
+pub struct BlockHeader {
+    pub number: u32,
+    pub hash: nintypes::common::hash::Hash256,
+    pub prev_hash: nintypes::common::hash::Hash256,
+}
+
+impl db::Pebble for BlockHeader {
+    type Inner = Self;
+
+    fn get_bytes(v: &Self::Inner) -> Cow<[u8]> {
+        let mut result = Vec::with_capacity(4 + 32 + 32);
+        result.extend(v.number.to_be_bytes());
+        result.extend(v.hash.0.to_vec());
+        result.extend(v.prev_hash.0.to_vec());
+
+        Cow::Owned(result)
+    }
+
+    fn from_bytes(v: Cow<[u8]>) -> anyhow::Result<Self::Inner> {
+        let number: u32 = u32::from_be_bytes(v[..4].try_into().anyhow()?);
+        let hash: nintypes::common::hash::Hash256 = v[4..v.len() - 32].try_into().anyhow()?;
+        let prev_hash: nintypes::common::hash::Hash256 = v[v.len() - 32..].try_into().anyhow()?;
+
+        Ok(Self {
+            number,
+            hash,
+            prev_hash,
+        })
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct AddressToken {
@@ -218,7 +250,7 @@ impl TokenHistoryDB {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TokenBalanceRest {
     pub tick: TokenTick,
     pub balance: Fixed128,
@@ -782,7 +814,7 @@ pub enum ParseError {
     Character(char),
     Length(usize),
     Separator(char),
-    Txid(bellscoin::hashes::hex::Error),
+    Txid(Error),
     Index(std::num::ParseIntError),
 }
 

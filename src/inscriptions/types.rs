@@ -1,6 +1,6 @@
 use crate::Fixed128;
 use crate::tokens::TokenTick;
-use bellscoin::BlockHash;
+use nintondo_dogecoin::BlockHash;
 use dutils::error::ContextWrapper;
 use electrs_client::{Fetchable, UpdateCapable};
 use itertools::Itertools;
@@ -58,7 +58,7 @@ pub struct InscriptionsTokenHistory {
 
 impl Fetchable for InscriptionsTokenHistory {
     fn get_type() -> &'static str {
-        "indexer"
+        "token_history"
     }
 }
 
@@ -68,6 +68,46 @@ pub struct BlockInfo {
     pub created: u32,
     pub block_hash: BlockHash,
     pub prev_block_hash: BlockHash,
+}
+
+impl From<BlockInfo> for crate::tokens::BlockHeader {
+    fn from(v: BlockInfo) -> Self {
+        Self {
+            number: v.height,
+            hash: v.block_hash.into(),
+            prev_hash: v.prev_block_hash.into(),
+        }
+    }
+}
+
+impl From<&BlockInfo> for crate::tokens::BlockHeader {
+    fn from(v: &BlockInfo) -> Self {
+        Self {
+            number: v.height,
+            hash: v.block_hash.into(),
+            prev_hash: v.prev_block_hash.into(),
+        }
+    }
+}
+
+impl From<electrs_client::BlockMeta> for crate::tokens::BlockHeader {
+    fn from(v: electrs_client::BlockMeta) -> Self {
+        Self {
+            number: v.height,
+            hash: v.block_hash.into(),
+            prev_hash: v.prev_block_hash.into(),
+        }
+    }
+}
+
+impl From<&crate::tokens::BlockHeader> for electrs_client::BlockMeta {
+    fn from(v: &crate::tokens::BlockHeader) -> Self {
+        Self {
+            height: v.number,
+            block_hash: v.hash.into(),
+            prev_block_hash: v.prev_hash.into(),
+        }
+    }
 }
 
 #[derive(

@@ -11,7 +11,7 @@ use {
         routing::get,
         Json, Router,
     },
-    bellscoin::{
+    nintondo_dogecoin::{
         hashes::{sha256, Hash},
         opcodes, script, BlockHash, Network, OutPoint, Transaction, TxOut, Txid,
     },
@@ -85,15 +85,15 @@ lazy_static! {
     static ref PASS: String = load_env!("RPC_PASS");
     static ref NETWORK: Network = load_opt_env!("NETWORK")
         .map(|x| Network::from_str(&x).unwrap())
-        .unwrap_or(Network::Bellscoin);
-    static ref MULTIPLE_INPUT_BEL_20_ACTIVATION_HEIGHT: usize = if let Network::Bellscoin = *NETWORK
+        .unwrap_or(Network::Dogecoin);
+    static ref MULTIPLE_INPUT_BEL_20_ACTIVATION_HEIGHT: usize = if let Network::Dogecoin = *NETWORK
     {
         133_000
     } else {
         0
     };
     static ref START_HEIGHT: u32 = match *NETWORK {
-        Network::Bellscoin => MAINNET_START_HEIGHT,
+        Network::Dogecoin => MAINNET_START_HEIGHT,
         _ => 0,
     };
     static ref SERVER_URL: String =
