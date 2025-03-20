@@ -1,9 +1,9 @@
 use crate::Fixed128;
 use crate::tokens::TokenTick;
-use nintondo_dogecoin::BlockHash;
 use dutils::error::ContextWrapper;
 use electrs_client::{Fetchable, UpdateCapable};
 use itertools::Itertools;
+use nintondo_dogecoin::{Address, BlockHash, ScriptBuf};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -11,6 +11,29 @@ use std::str::FromStr;
 pub struct TokenHistoryData {
     pub block_info: BlockInfo,
     pub inscriptions: Vec<TokenHistory>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ParsedTokenHistoryData {
+    pub block_info: BlockInfo,
+    pub inscriptions: Vec<ParsedTokenHistory>,
+}
+
+impl TryFrom<TokenHistoryData> for ParsedTokenHistoryData {
+    type Error = nintondo_dogecoin::address::Error;
+
+    fn try_from(
+        TokenHistoryData {
+            block_info,
+            inscriptions,
+        }: TokenHistoryData,
+    ) -> Result<Self, Self::Error> {
+        let converted: Result<Vec<_>, _> = inscriptions.into_iter().map(|x| x.try_into()).collect();
+        Ok(Self {
+            block_info,
+            inscriptions: converted?,
+        })
+    }
 }
 
 impl UpdateCapable for TokenHistoryData {
@@ -37,6 +60,40 @@ impl From<InscriptionsTokenHistory> for Vec<TokenHistoryData> {
                 inscriptions,
             })
             .collect()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ParsedTokenHistory {
+    pub from: ScriptBuf,
+    pub to: ScriptBuf,
+    pub from_location: HistoryLocation,
+    pub to_location: HistoryLocation,
+    pub leaked: bool,
+    pub token: ParsedTokenAction,
+}
+
+impl TryFrom<TokenHistory> for ParsedTokenHistory {
+    type Error = nintondo_dogecoin::address::Error;
+
+    fn try_from(
+        TokenHistory {
+            from,
+            to,
+            from_location,
+            to_location,
+            leaked,
+            token,
+        }: TokenHistory,
+    ) -> Result<Self, Self::Error> {
+        Ok(Self {
+            from: Address::from_str(&from)?.payload.script_pubkey(),
+            to: Address::from_str(&to)?.payload.script_pubkey(),
+            from_location,
+            to_location,
+            leaked,
+            token,
+        })
     }
 }
 

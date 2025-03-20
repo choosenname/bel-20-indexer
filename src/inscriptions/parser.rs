@@ -1,5 +1,8 @@
 use super::*;
-use crate::inscriptions::types::{HistoryLocation, Outpoint, TokenHistory, TokenHistoryData};
+use crate::inscriptions::types::{
+    HistoryLocation, Outpoint, ParsedTokenHistory, ParsedTokenHistoryData, TokenHistory,
+    TokenHistoryData,
+};
 use nintondo_dogecoin::Address;
 
 pub struct InitialIndexer {}
@@ -31,15 +34,16 @@ impl From<HistoryLocation> for Location {
 }
 
 impl InitialIndexer {
-    fn parse_block(height: u32, created: u32, ths: &[TokenHistory], token_cache: &mut TokenCache) {
+    fn parse_block(
+        height: u32,
+        created: u32,
+        ths: &[ParsedTokenHistory],
+        token_cache: &mut TokenCache,
+    ) {
         let mut inscription_idx = 0;
         for th in ths {
             let location = th.to_location.into();
-            let owner = Address::from_str(&th.to)
-                .unwrap() // todo remove unwrap
-                .payload
-                .script_pubkey()
-                .compute_script_hash();
+            let owner = th.to.compute_script_hash();
             let txid = TxidN(th.from_location.outpoint.txid).into();
             let vout = th.from_location.outpoint.vout;
 
@@ -65,11 +69,7 @@ impl InitialIndexer {
                             mint_count: 0,
                             height,
                             created,
-                            deployer: Address::from_str(&th.from)
-                                .unwrap() //todo remove unwrap
-                                .payload
-                                .script_pubkey()
-                                .compute_script_hash(),
+                            deployer: th.from.compute_script_hash(),
                             transactions: 1,
                         },
                         owner,
@@ -98,7 +98,7 @@ impl InitialIndexer {
                 }
                 inscriptions::types::ParsedTokenAction::SpentTransfer { .. } => {
                     if th.leaked {
-                        token_cache.burned_transfer(location, txid, vout);
+                        token_cache.burned_transfer(location, txid, vout); // todo use burned txid and vout
                     } else {
                         token_cache.trasferred(location, owner, txid, vout);
                     }
@@ -108,7 +108,7 @@ impl InitialIndexer {
     }
 
     pub async fn handle(
-        token_history_data: TokenHistoryData,
+        token_history_data: ParsedTokenHistoryData,
         server: Arc<Server>,
         reorg_cache: Option<Arc<parking_lot::Mutex<crate::reorg::ReorgCache>>>,
     ) -> anyhow::Result<()> {
@@ -170,11 +170,7 @@ impl InitialIndexer {
                         )
                     })
                     .map(|k| AddressLocation {
-                        address: Address::from_str(&k.to)
-                            .unwrap()
-                            .payload
-                            .script_pubkey()
-                            .compute_script_hash(), //todo remove unwrap
+                        address: k.to.compute_script_hash(),
                         location: Location {
                             outpoint: k.to_location.outpoint.into(),
                             offset: 0,

@@ -65,7 +65,7 @@ async fn initial_indexer(
     println!("Initial indexer");
 
     let last_electris_block = client.get_last_electrs_block_meta().await?;
-    let block_number = server.db.last_block.get(()).unwrap_or_default();
+    let block_number = server.db.last_block.get(()).unwrap_or_default(); // todo get real first block
     dbg!(block_number);
     let progress = crate::utils::Progress::begin(
         "Indexing",
@@ -176,7 +176,7 @@ async fn hadle_update(
     let new_block_number = match update {
         electrs_client::Update::AddBlock { block, .. } => {
             let number = block.block_info.height;
-            parser::InitialIndexer::handle(block, server.clone(), reorg_cache)
+            parser::InitialIndexer::handle(block.try_into().anyhow()?, server.clone(), reorg_cache)
                 .await
                 .inspect_err(|e| {
                     dbg!(e);

@@ -1,5 +1,5 @@
 use super::*;
-use nintondo_dogecoin::Address;
+use nintondo_dogecoin::{Address, ScriptBuf};
 use std::fmt::Debug;
 
 #[derive(Clone)]
@@ -11,7 +11,7 @@ pub struct AddressHasher {
 
 pub struct AddressesToLoad {
     pub height: u32,
-    pub addresses: HashSet<String>,
+    pub addresses: HashSet<ScriptBuf>,
 }
 
 impl Handler for AddressHasher {
@@ -50,11 +50,11 @@ impl Handler for AddressHasher {
                 .flat_map(|x| x.addresses)
                 .unique()
                 .filter_map(|x| {
-                    Address::from_str(&x)
-                        .ok()
-                        .map(|v| (v.payload.script_pubkey().compute_script_hash(), x))
-                    // x.to_address_str(*NETWORK)
-                    //     .map(|v| (x.compute_script_hash(), v))
+                    // Address::from_str(&x)
+                    //     .ok()
+                    //     .map(|v| (v.payload.script_pubkey().compute_script_hash(), x))
+                    x.to_address_str(*NETWORK)
+                        .map(|v| (x.compute_script_hash(), v))
                 });
 
             let db = self.server.db.clone();
