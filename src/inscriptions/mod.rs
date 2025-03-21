@@ -23,7 +23,6 @@ pub use structs::Location;
 
 pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<()> {
     let reorg_cache = Arc::new(parking_lot::Mutex::new(reorg::ReorgCache::new()));
-    //todo clean
     let client = electrs_client::Client::<TokenHistoryData>::new_from_cfg(server.client.clone())
         .await
         .inspect_err(|e| {
@@ -83,9 +82,11 @@ async fn initial_indexer(
         let mut last_indexer_block_number = last_indexer_block.height;
         let from = last_indexer_block.into();
         // todo fetch ahead
-        let updates = load_blocks(client, &[from]).await?; // todo stop on cancel
+        let Some(updates) = token.run_fn(load_blocks(client, &[from])).await else {
+            break;
+        };
 
-        for update in updates {
+        for update in updates? {
             if token.is_cancelled() {
                 break;
             }
@@ -140,9 +141,11 @@ async fn indexer(
             continue;
         }
         let blocks = reorg_cache.lock().get_blocks_headers();
-        let updates = load_blocks(&client, &blocks).await?;
+        let Some(updates) = token.run_fn(load_blocks(client, &blocks)).await else {
+            break;
+        };
 
-        for update in updates {
+        for update in updates? {
             if token.is_cancelled() {
                 break;
             }
