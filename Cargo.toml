@@ -42,3 +42,4 @@ validator = { version = "0.20.0", features = ["derive"] }
 
 electrs_client = { git = "https://github.com/Nintondo/electrs-client" }
 nintondo-dogecoin = { version = "0.30.6" , features = ["serde"]}
+thiserror = "2.0.12"

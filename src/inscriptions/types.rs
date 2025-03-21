@@ -1,5 +1,5 @@
 use crate::Fixed128;
-use crate::tokens::TokenTick;
+use crate::tokens::{FullHash, TokenTick};
 use dutils::error::ContextWrapper;
 use electrs_client::{Fetchable, UpdateCapable};
 use itertools::Itertools;
@@ -20,7 +20,7 @@ pub struct ParsedTokenHistoryData {
 }
 
 impl TryFrom<TokenHistoryData> for ParsedTokenHistoryData {
-    type Error = nintondo_dogecoin::address::Error;
+    type Error = TokenHistoryError;
 
     fn try_from(
         TokenHistoryData {
@@ -28,7 +28,10 @@ impl TryFrom<TokenHistoryData> for ParsedTokenHistoryData {
             inscriptions,
         }: TokenHistoryData,
     ) -> Result<Self, Self::Error> {
-        let converted: Result<Vec<_>, _> = inscriptions.into_iter().map(|x| x.try_into()).collect();
+        let converted = inscriptions
+            .into_iter()
+            .map(|x| x.try_into())
+            .collect::<Result<Vec<_>, _>>();
         Ok(Self {
             block_info,
             inscriptions: converted?,
@@ -63,32 +66,64 @@ impl From<InscriptionsTokenHistory> for Vec<TokenHistoryData> {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
+pub enum ParsedTokenAddress {
+    Standard(ScriptBuf),
+    NonStandard(FullHash),
+}
+
+impl TryFrom<TokenAddress> for ParsedTokenAddress {
+    type Error = nintondo_dogecoin::address::Error;
+
+    fn try_from(value: TokenAddress) -> Result<Self, Self::Error> {
+        match value {
+            TokenAddress::Standard(str) => {
+                let d = Address::from_str(&str)?.payload.script_pubkey();
+
+                Ok(ParsedTokenAddress::Standard(d))
+            }
+            TokenAddress::NonStandard(hash) => Ok(ParsedTokenAddress::NonStandard(hash)),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ParsedTokenHistory {
-    pub from: ScriptBuf,
-    pub to: ScriptBuf,
+    pub from: ParsedTokenAddress,
+    pub to: ParsedTokenAddress,
     pub from_location: HistoryLocation,
     pub to_location: HistoryLocation,
     pub leaked: bool,
-    pub token: ParsedTokenAction,
+    pub token: ParsedTokenActionRest,
 }
 
 impl TryFrom<TokenHistory> for ParsedTokenHistory {
-    type Error = nintondo_dogecoin::address::Error;
+    type Error = TokenHistoryError;
 
-    fn try_from(
-        TokenHistory {
+    fn try_from(value: TokenHistory) -> Result<Self, Self::Error> {
+        let TokenHistory {
             from,
             to,
             from_location,
             to_location,
             leaked,
             token,
-        }: TokenHistory,
-    ) -> Result<Self, Self::Error> {
+        } = value.clone();
         Ok(Self {
-            from: Address::from_str(&from)?.payload.script_pubkey(),
-            to: Address::from_str(&to)?.payload.script_pubkey(),
+            from: from
+                .clone()
+                .try_into()
+                .map_err(|e| TokenHistoryError::ParseAddress {
+                    error: e,
+                    address: from,
+                })?,
+            to: to
+                .clone()
+                .try_into()
+                .map_err(|e| TokenHistoryError::ParseAddress {
+                    error: e,
+                    address: to,
+                })?,
             from_location,
             to_location,
             leaked,
@@ -98,13 +133,28 @@ impl TryFrom<TokenHistory> for ParsedTokenHistory {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum TokenAddress {
+    Standard(String),
+    NonStandard(FullHash),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TokenHistory {
-    pub from: String,
-    pub to: String,
+    pub from: TokenAddress,
+    pub to: TokenAddress,
     pub from_location: HistoryLocation,
     pub to_location: HistoryLocation,
     pub leaked: bool,
-    pub token: ParsedTokenAction,
+    pub token: ParsedTokenActionRest,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TokenHistoryError {
+    #[error("Failed to parse address({address:?}) from str, {error}")]
+    ParseAddress {
+        error: nintondo_dogecoin::address::Error,
+        address: TokenAddress,
+    },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -168,7 +218,18 @@ impl From<&crate::tokens::BlockHeader> for electrs_client::BlockMeta {
 }
 
 #[derive(
-    PartialEq, Eq, PartialOrd, Ord, Debug, Clone, bytemuck::Pod, bytemuck::Zeroable, Copy, Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Clone,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+    Copy,
+    Hash,
+    Deserialize,
+    Serialize,
 )]
 #[repr(C, packed)]
 pub struct Outpoint {
@@ -202,22 +263,59 @@ pub enum ParsedTokenAction {
         amt: Fixed128,
     },
     SpentTransfer {
+        outpoint: Option<Outpoint>,
         tick: TokenTick,
         amt: Fixed128,
     },
 }
 
-impl ParsedTokenAction {
-    pub fn tick(&self) -> &TokenTick {
-        match self {
-            ParsedTokenAction::Deploy { tick, .. }
-            | ParsedTokenAction::Mint { tick, .. }
-            | ParsedTokenAction::DeployTransfer { tick, .. }
-            | ParsedTokenAction::SpentTransfer { tick, .. } => tick,
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[repr(u8)]
+pub enum ParsedTokenActionRest {
+    Deploy {
+        tick: TokenTick,
+        max: Fixed128,
+        lim: Fixed128,
+        dec: u8,
+    },
+    Mint {
+        tick: TokenTick,
+        amt: Fixed128,
+    },
+    DeployTransfer {
+        tick: TokenTick,
+        amt: Fixed128,
+    },
+     SpentTransfer {
+        tick: TokenTick,
+        amt: Fixed128,
+    },
+}
+
+impl From<ParsedTokenAction> for ParsedTokenActionRest {
+    fn from(value: ParsedTokenAction) -> Self {
+        match value {
+            ParsedTokenAction::Deploy {
+                tick,
+                max,
+                lim,
+                dec,
+            } => ParsedTokenActionRest::Deploy {
+                tick,
+                max,
+                lim,
+                dec,
+            },
+            ParsedTokenAction::Mint { tick, amt } => ParsedTokenActionRest::Mint { tick, amt },
+            ParsedTokenAction::DeployTransfer { tick, amt } => {
+                ParsedTokenActionRest::DeployTransfer { tick, amt }
+            }
+            ParsedTokenAction::SpentTransfer { tick, amt, .. } => {
+                ParsedTokenActionRest::SpentTransfer { tick, amt }
+            }
         }
     }
 }
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C, packed)]
 pub struct HistoryLocation {

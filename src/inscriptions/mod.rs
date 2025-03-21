@@ -82,6 +82,7 @@ async fn initial_indexer(
 
         let mut last_indexer_block_number = last_indexer_block.height;
         let from = last_indexer_block.into();
+        // todo fetch ahead
         let updates = load_blocks(client, &[from]).await?; // todo stop on cancel
 
         for update in updates {
@@ -176,7 +177,13 @@ async fn hadle_update(
     let new_block_number = match update {
         electrs_client::Update::AddBlock { block, .. } => {
             let number = block.block_info.height;
-            parser::InitialIndexer::handle(block.try_into().anyhow()?, server.clone(), reorg_cache)
+            let token_history_data = block
+                .try_into()
+                .inspect_err(|e| {
+                    dbg!(e);
+                })
+                .anyhow()?;
+            parser::InitialIndexer::handle(token_history_data, server.clone(), reorg_cache)
                 .await
                 .inspect_err(|e| {
                     dbg!(e);

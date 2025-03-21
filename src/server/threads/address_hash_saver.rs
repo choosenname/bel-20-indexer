@@ -1,4 +1,5 @@
 use super::*;
+use crate::inscriptions::types::ParsedTokenAddress;
 use nintondo_dogecoin::{Address, ScriptBuf};
 use std::fmt::Debug;
 
@@ -11,7 +12,7 @@ pub struct AddressHasher {
 
 pub struct AddressesToLoad {
     pub height: u32,
-    pub addresses: HashSet<ScriptBuf>,
+    pub addresses: HashSet<ParsedTokenAddress>,
 }
 
 impl Handler for AddressHasher {
@@ -53,8 +54,12 @@ impl Handler for AddressHasher {
                     // Address::from_str(&x)
                     //     .ok()
                     //     .map(|v| (v.payload.script_pubkey().compute_script_hash(), x))
-                    x.to_address_str(*NETWORK)
-                        .map(|v| (x.compute_script_hash(), v))
+                    match x {
+                        ParsedTokenAddress::Standard(str) => str
+                            .to_address_str(*NETWORK)
+                            .map(|v| (str.compute_script_hash(), v)),
+                        ParsedTokenAddress::NonStandard(_) => None,
+                    }
                 });
 
             let db = self.server.db.clone();

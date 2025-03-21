@@ -4,16 +4,12 @@ extern crate serde;
 
 use {
     axum::{
+        Json, Router,
         body::Body,
         extract::{Path, Query, State},
         http::{Response, StatusCode},
         response::IntoResponse,
         routing::get,
-        Json, Router,
-    },
-    nintondo_dogecoin::{
-        hashes::{sha256, Hash},
-        opcodes, script, BlockHash, Network, OutPoint, Transaction, TxOut, Txid,
     },
     db::{RocksDB, RocksTable, UsingConsensus, UsingSerde},
     dutils::{
@@ -25,9 +21,14 @@ use {
     inscriptions::{Location, ScriptToAddr},
     itertools::Itertools,
     lazy_static::lazy_static,
+    nintondo_dogecoin::{
+        BlockHash, Network, OutPoint, Transaction, TxOut, Txid,
+        hashes::{Hash, sha256},
+        opcodes, script,
+    },
     num_traits::Zero,
     serde::{Deserialize, Deserializer, Serialize, Serializer},
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     server::{Server, ServerEvent},
     std::{
         borrow::{Borrow, Cow},
@@ -38,7 +39,7 @@ use {
         marker::PhantomData,
         ops::{Bound, RangeBounds},
         str::FromStr,
-        sync::{atomic::AtomicU64, Arc},
+        sync::{Arc, atomic::AtomicU64},
         time::{Duration, Instant},
     },
     tables::DB,
@@ -122,6 +123,10 @@ async fn main() {
     };
 
     let server1 = server.clone();
+
+    // for x in server1.db.fullhash_to_address.iter() {
+    //     dbg!(x.1);
+    // }
 
     let result = join_all([
         signal_handler,

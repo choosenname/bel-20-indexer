@@ -48,7 +48,7 @@ impl InitialIndexer {
             let vout = th.from_location.outpoint.vout;
 
             match th.token {
-                inscriptions::types::ParsedTokenAction::Deploy {
+                inscriptions::types::ParsedTokenActionRest::Deploy {
                     tick,
                     max,
                     lim,
@@ -76,7 +76,7 @@ impl InitialIndexer {
                     });
                     inscription_idx += 1;
                 }
-                inscriptions::types::ParsedTokenAction::Mint { tick, amt } => {
+                inscriptions::types::ParsedTokenActionRest::Mint { tick, amt } => {
                     token_cache.token_actions.push(TokenAction::Mint {
                         owner,
                         proto: MintProto::Bel20 { tick, amt },
@@ -84,7 +84,7 @@ impl InitialIndexer {
                         vout,
                     })
                 }
-                inscriptions::types::ParsedTokenAction::DeployTransfer { tick, amt } => {
+                inscriptions::types::ParsedTokenActionRest::DeployTransfer { tick, amt } => {
                     token_cache.token_actions.push(TokenAction::Transfer {
                         location,
                         owner,
@@ -96,7 +96,7 @@ impl InitialIndexer {
                         .all_transfers
                         .insert(th.to_location.into(), TransferProtoDB { tick, amt, height });
                 }
-                inscriptions::types::ParsedTokenAction::SpentTransfer { .. } => {
+                inscriptions::types::ParsedTokenActionRest::SpentTransfer { .. } => {
                     if th.leaked {
                         token_cache.burned_transfer(location, txid, vout); // todo use burned txid and vout
                     } else {
@@ -164,10 +164,7 @@ impl InitialIndexer {
                     .inscriptions
                     .iter()
                     .filter(|x| {
-                        matches!(
-                            x.token,
-                            inscriptions::types::ParsedTokenAction::SpentTransfer { .. }
-                        )
+                        matches!(x.token, types::ParsedTokenActionRest::SpentTransfer { .. })
                     })
                     .map(|k| AddressLocation {
                         address: k.to.compute_script_hash(),
