@@ -3,6 +3,7 @@ use super::*;
 use dutils::async_thread::{Handler, Thread, ThreadController};
 
 mod address_hash_saver;
+pub mod blocks_loader;
 mod event_sender;
 
 pub use self::address_hash_saver::AddressesToLoad;

@@ -11,8 +11,10 @@ mod tag;
 pub mod types;
 mod utils;
 
+use dutils::async_thread::Thread;
 use electrs_client::{BlockMeta, UpdateCapable};
 use envelope::{ParsedEnvelope, RawEnvelope};
+use jsonrpc_async::client;
 use searcher::InscriptionSearcher;
 use structs::{Inscription, ParsedInscription};
 use tag::Tag;
@@ -23,11 +25,13 @@ pub use structs::Location;
 
 pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<()> {
     let reorg_cache = Arc::new(parking_lot::Mutex::new(reorg::ReorgCache::new()));
-    let client = electrs_client::Client::<TokenHistoryData>::new_from_cfg(server.client.clone())
-        .await
-        .inspect_err(|e| {
-            dbg!(e);
-        })?;
+    let client = Arc::new(
+        electrs_client::Client::<TokenHistoryData>::new_from_cfg(server.client.clone())
+            .await
+            .inspect_err(|e| {
+                dbg!(e);
+            })?,
+    );
 
     loop {
         if let Err(e) = async {
@@ -38,10 +42,16 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
                 .checked_sub(reorg::REORG_CACHE_MAX_LEN as u32)
             {
                 let end_block = client.get_electrs_block_meta(block_number).await?;
-                initial_indexer(token.clone(), server.clone(), &client, end_block).await?;
+                initial_indexer(token.clone(), server.clone(), client.clone(), end_block).await?;
             }
 
-            indexer(token.clone(), server.clone(), &client, reorg_cache.clone()).await?;
+            indexer(
+                token.clone(),
+                server.clone(),
+                client.clone(),
+                reorg_cache.clone(),
+            )
+            .await?;
 
             Ok::<(), anyhow::Error>(())
         }
@@ -67,13 +77,30 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
 async fn initial_indexer(
     token: WaitToken,
     server: Arc<Server>,
-    client: &electrs_client::Client<TokenHistoryData>,
+    client: Arc<electrs_client::Client<TokenHistoryData>>,
     end: BlockMeta,
 ) -> anyhow::Result<()> {
     println!("Initial indexer");
 
+    let blocks_storage = Arc::new(tokio::sync::Mutex::new(
+        crate::server::threads::blocks_loader::LoadedBlocks::default(),
+    ));
+
+    let blocks_loader = dutils::async_thread::ThreadController::new(
+        crate::server::threads::blocks_loader::BlocksLoader {
+            storage: blocks_storage.clone(),
+            client: client.clone(),
+        },
+    )
+    .with_name("BlocksLoader")
+    .with_restart(Duration::from_secs(5))
+    .with_invoke_frq(Duration::from_secs(1))
+    .with_cancellation(token.clone())
+    .run();
+
     let last_electris_block = client.get_last_electrs_block_meta().await?;
     let block_number = server.db.last_block.get(()).unwrap_or_default(); // todo get real first block
+
     dbg!(block_number);
     let progress = crate::utils::Progress::begin(
         "Indexing",
@@ -81,43 +108,68 @@ async fn initial_indexer(
         block_number as _,
     );
 
-    let mut repeater = token.repeat_until_cancel(Duration::from_secs(1));
-    while repeater.next().await {
-        let last_indexer_block = {
-            let block_number = server.db.last_block.get(()).unwrap_or_default();
-            client.get_electrs_block_meta(block_number).await?
+    let last_indexer_block = {
+        let block_number = server.db.last_block.get(()).unwrap_or_default();
+        client.get_electrs_block_meta(block_number).await?
+    };
+
+    let mut last_indexer_block_number = last_indexer_block.height;
+
+    blocks_storage
+        .lock()
+        .await
+        .to_load(last_indexer_block.into());
+
+    let mut sleep = token.repeat_until_cancel(Duration::from_secs(1));
+
+    loop {
+        let Some(blocks) = blocks_storage.lock().await.take_blocks() else {
+            if sleep.next().await || token.is_cancelled() {
+                return Ok(());
+            }
+
+            continue;
         };
 
-        let mut last_indexer_block_number = last_indexer_block.height;
-        let from = last_indexer_block.into();
-        // todo fetch ahead
-        let Some(updates) = token.run_fn(load_blocks(client, &[from])).await else {
-            break;
-        };
+        let to_load = blocks
+            .blocks
+            .last()
+            .map(|x| match x {
+                electrs_client::Update::AddBlock { block, .. } => BlockHeader {
+                    number: block.block_info.height,
+                    hash: block.block_info.block_hash.into(),
+                    prev_hash: block.block_info.prev_block_hash.into(),
+                },
+                _ => panic!("Got reorg wtf?"),
+            })
+            .clone();
 
-        for update in updates? {
+        if let Some(from) = to_load {
+            blocks_storage.lock().await.to_load(from);
+        }
+
+        for update in blocks.blocks {
             if token.is_cancelled() {
                 break;
             }
 
             last_indexer_block_number =
-                hadle_update(server.clone(), None, update, last_indexer_block_number).await?;
+                handle_update(server.clone(), None, update, last_indexer_block_number).await?;
 
             progress.inc(1);
 
             if last_indexer_block_number >= end.height {
-                break;
+                blocks_loader.abort();
+                return Ok(());
             }
         }
     }
-
-    Ok(())
 }
 
 async fn indexer(
     token: WaitToken,
     server: Arc<Server>,
-    client: &electrs_client::Client<TokenHistoryData>,
+    client: Arc<electrs_client::Client<TokenHistoryData>>,
     reorg_cache: Arc<parking_lot::Mutex<reorg::ReorgCache>>,
 ) -> anyhow::Result<()> {
     println!("Indexer");
@@ -150,7 +202,7 @@ async fn indexer(
             continue;
         }
         let blocks = reorg_cache.lock().get_blocks_headers();
-        let Some(updates) = token.run_fn(load_blocks(client, &blocks)).await else {
+        let Some(updates) = token.run_fn(load_blocks(&client, &blocks)).await else {
             break;
         };
 
@@ -159,7 +211,7 @@ async fn indexer(
                 break;
             }
 
-            hadle_update(
+            handle_update(
                 server.clone(),
                 Some(reorg_cache.clone()),
                 update,
@@ -180,7 +232,7 @@ async fn indexer(
     Ok(())
 }
 
-async fn hadle_update(
+async fn handle_update(
     server: Arc<Server>,
     reorg_cache: Option<Arc<parking_lot::Mutex<reorg::ReorgCache>>>,
     update: electrs_client::Update<TokenHistoryData>,
