@@ -29,22 +29,31 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
             dbg!(e);
         })?;
 
-    let last_electris_block = client
-        .get_last_electrs_block_meta()
+    loop {
+        if let Err(e) = async {
+            let last_electris_block = client.get_last_electrs_block_meta().await?;
+
+            if let Some(block_number) = last_electris_block
+                .height
+                .checked_sub(reorg::REORG_CACHE_MAX_LEN as u32)
+            {
+                let end_block = client.get_electrs_block_meta(block_number).await?;
+                initial_indexer(token.clone(), server.clone(), &client, end_block).await?;
+            }
+
+            indexer(token.clone(), server.clone(), &client, reorg_cache.clone()).await?;
+
+            Ok::<(), anyhow::Error>(())
+        }
         .await
-        .inspect_err(|e| {
-            dbg!(e);
-        })?;
+        {
+            error!("An error occurred: {:?}, retrying...", e);
+            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+            continue;
+        }
 
-    if let Some(block_number) = last_electris_block
-        .height
-        .checked_sub(reorg::REORG_CACHE_MAX_LEN as u32)
-    {
-        let end_block = client.get_electrs_block_meta(block_number).await?;
-        initial_indexer(token.clone(), server.clone(), &client, end_block).await?;
+        break;
     }
-
-    indexer(token.clone(), server.clone(), &client, reorg_cache.clone()).await?;
 
     info!("Server is finished");
 
