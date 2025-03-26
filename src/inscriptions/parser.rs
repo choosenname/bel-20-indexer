@@ -723,10 +723,21 @@ impl BatchCache {
             block_cache.full_hash_to_address = temp_addresses
                 .into_iter()
                 .flat_map(|x| match x {
-                    types::ParsedTokenAddress::Standard(str) => str
-                        .to_address_str(*NETWORK)
-                        .map(|v| (str.compute_script_hash(), v)),
-                    types::ParsedTokenAddress::NonStandard(_) => None,
+                    types::ParsedTokenAddress::Standard(script) => {
+                        script.to_address_str(*NETWORK).map(|v| {
+                            (
+                                script.compute_script_hash(),
+                                if script.is_op_return() {
+                                    OP_RETURN_ADDRESS.to_string()
+                                } else {
+                                    v
+                                },
+                            )
+                        })
+                    }
+                    types::ParsedTokenAddress::NonStandard(full_hash) => {
+                        Some((full_hash, NON_STANDARD_ADDRESS.to_string()))
+                    }
                 })
                 .collect();
 
