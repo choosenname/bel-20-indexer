@@ -1,4 +1,5 @@
 use super::*;
+use electrs_client::Update;
 
 pub const PROTOCOL_ID: &[u8; 3] = b"ord";
 
@@ -23,11 +24,13 @@ pub use structs::Location;
 
 pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<()> {
     let reorg_cache = Arc::new(parking_lot::Mutex::new(reorg::ReorgCache::new()));
-    let client = electrs_client::Client::<TokenHistoryData>::new_from_cfg(server.client.clone())
-        .await
-        .inspect_err(|e| {
-            dbg!(e);
-        })?;
+    let client = Arc::new(
+        electrs_client::Client::<TokenHistoryData>::new_from_cfg(server.client.clone())
+            .await
+            .inspect_err(|e| {
+                dbg!(e);
+            })?,
+    );
 
     loop {
         if let Err(e) = async {
@@ -38,7 +41,7 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
                 .checked_sub(reorg::REORG_CACHE_MAX_LEN as u32)
             {
                 let end_block = client.get_electrs_block_meta(block_number).await?;
-                initial_indexer(token.clone(), server.clone(), &client, end_block).await?;
+                initial_indexer(token.clone(), server.clone(), client.clone(), end_block).await?;
             }
 
             indexer(token.clone(), server.clone(), &client, reorg_cache.clone()).await?;
@@ -48,8 +51,14 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
         .await
         {
             error!("An error occurred: {:?}, retrying...", e);
-            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-            continue;
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(300)) => {
+                    continue;
+                }
+                _ = token.cancelled() => {
+                    break;
+                }
+            }
         }
 
         break;
@@ -67,7 +76,7 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
 async fn initial_indexer(
     token: WaitToken,
     server: Arc<Server>,
-    client: &electrs_client::Client<TokenHistoryData>,
+    client: Arc<electrs_client::Client<TokenHistoryData>>,
     end: BlockMeta,
 ) -> anyhow::Result<()> {
     println!("Initial indexer");
@@ -91,7 +100,7 @@ async fn initial_indexer(
         let mut last_indexer_block_number = last_indexer_block.height;
         let from = last_indexer_block.into();
         // todo fetch ahead
-        let Some(updates) = token.run_fn(load_blocks(client, &[from])).await else {
+        let Some(updates) = token.run_fn(load_blocks(&client, &[from])).await else {
             break;
         };
 
@@ -101,7 +110,7 @@ async fn initial_indexer(
             }
 
             last_indexer_block_number =
-                hadle_update(server.clone(), None, update, last_indexer_block_number).await?;
+                handle_update(server.clone(), None, update, last_indexer_block_number).await?;
 
             progress.inc(1);
 
@@ -159,7 +168,7 @@ async fn indexer(
                 break;
             }
 
-            hadle_update(
+            handle_update(
                 server.clone(),
                 Some(reorg_cache.clone()),
                 update,
@@ -180,7 +189,7 @@ async fn indexer(
     Ok(())
 }
 
-async fn hadle_update(
+async fn handle_update(
     server: Arc<Server>,
     reorg_cache: Option<Arc<parking_lot::Mutex<reorg::ReorgCache>>>,
     update: electrs_client::Update<TokenHistoryData>,
