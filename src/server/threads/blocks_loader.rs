@@ -38,7 +38,15 @@ impl Handler for BlocksLoader {
             return Ok(());
         };
 
+        let now = Instant::now();
         let blocks = Self::fetch_blocks(&self.client, to_load).await.anyhow()?;
+
+        info!(
+            "BlocksLoader fetch blocks {} from #{}, {}s",
+            blocks.blocks.len(),
+            blocks.from.number,
+            now.elapsed().as_secs_f32()
+        );
 
         let mut storage = self.storage.lock().await;
         storage.to_load.pop_front();

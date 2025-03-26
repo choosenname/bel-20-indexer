@@ -286,7 +286,7 @@ pub enum ParsedTokenActionRest {
         tick: TokenTick,
         amt: Fixed128,
     },
-     SpentTransfer {
+    SpentTransfer {
         tick: TokenTick,
         amt: Fixed128,
     },

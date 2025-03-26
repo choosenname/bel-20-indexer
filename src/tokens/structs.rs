@@ -646,7 +646,10 @@ impl From<HistoryValueEvent> for TokenActionRest {
 }
 
 impl TokenActionRest {
-    fn from_with_addresses(value: TokenHistoryDB, addresses: &HashMap<FullHash, String>) -> Self {
+    pub fn from_with_addresses(
+        value: TokenHistoryDB,
+        addresses: &HashMap<FullHash, String>,
+    ) -> Self {
         match value {
             TokenHistoryDB::Deploy {
                 max,

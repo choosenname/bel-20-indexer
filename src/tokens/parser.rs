@@ -100,13 +100,13 @@ impl TokenCache {
                     Err(error) => match error.to_string().as_str() {
                         "Invalid decimal: empty" => return Err(Brc4ParseErr::DecimalEmpty),
                         "Invalid decimal: overflow from too many digits" => {
-                            return Err(Brc4ParseErr::DecimalOverflow)
+                            return Err(Brc4ParseErr::DecimalOverflow);
                         }
                         "value cannot start from + or -" => {
-                            return Err(Brc4ParseErr::DecimalPlusMinus)
+                            return Err(Brc4ParseErr::DecimalPlusMinus);
                         }
                         "value cannot start or end with ." => {
-                            return Err(Brc4ParseErr::DecimalDotStartEnd)
+                            return Err(Brc4ParseErr::DecimalDotStartEnd);
                         }
                         "value cannot contain spaces" => return Err(Brc4ParseErr::DecimalSpaces),
                         "invalid digit found in string" => return Err(Brc4ParseErr::InvalidDigit),
@@ -139,7 +139,7 @@ impl TokenCache {
         }
     }
 
-    /// Parse token action from InscriptionTemplace and returns bool if it is mint or not.
+    /// Parse token action from InscriptionTemplate and returns bool if it is mint or not.
     pub fn parse_token_action(
         &mut self,
         inc: &InscriptionTemplate,
@@ -213,7 +213,7 @@ impl TokenCache {
         None
     }
 
-    pub fn trasferred(&mut self, location: Location, recipient: FullHash, txid: Txid, vout: u32) {
+    pub fn transferred(&mut self, location: Location, recipient: FullHash, txid: Txid, vout: u32) {
         self.token_actions.push(TokenAction::Transferred {
             transfer_location: location,
             recipient: Some(recipient),

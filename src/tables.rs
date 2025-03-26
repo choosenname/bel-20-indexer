@@ -47,7 +47,7 @@ impl DB {
                 if keys.contains(&AddressLocation {
                     address: k.address,
                     location: Location {
-                        offset: 0,
+                        offset: k.location.offset,
                         outpoint: k.location.outpoint,
                     },
                 }) {

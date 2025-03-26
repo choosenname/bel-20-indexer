@@ -43,6 +43,7 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
             {
                 let end_block = client.get_electrs_block_meta(block_number).await?;
                 initial_indexer(token.clone(), server.clone(), client.clone(), end_block).await?;
+                return Ok(());
             }
 
             indexer(
@@ -101,7 +102,6 @@ async fn initial_indexer(
     let last_electris_block = client.get_last_electrs_block_meta().await?;
     let block_number = server.db.last_block.get(()).unwrap_or_default(); // todo get real first block
 
-    dbg!(block_number);
     let progress = crate::utils::Progress::begin(
         "Indexing",
         last_electris_block.height as _,
@@ -113,18 +113,16 @@ async fn initial_indexer(
         client.get_electrs_block_meta(block_number).await?
     };
 
-    let mut last_indexer_block_number = last_indexer_block.height;
-
     blocks_storage
         .lock()
         .await
         .to_load(last_indexer_block.into());
 
     let mut sleep = token.repeat_until_cancel(Duration::from_secs(1));
-
-    loop {
+    let mut is_reach_end = false;
+    while !is_reach_end {
         let Some(blocks) = blocks_storage.lock().await.take_blocks() else {
-            if sleep.next().await || token.is_cancelled() {
+            if !sleep.next().await || token.is_cancelled() {
                 return Ok(());
             }
 
@@ -144,26 +142,52 @@ async fn initial_indexer(
             })
             .clone();
 
-        if let Some(from) = to_load {
-            blocks_storage.lock().await.to_load(from);
+        let mut updates = Vec::<types::ParsedTokenHistoryData>::new();
+
+        for block in blocks.blocks {
+            match block {
+                electrs_client::Update::AddBlock { block, .. } => {
+                    let casted_block: types::ParsedTokenHistoryData = block
+                        .try_into()
+                        .inspect_err(|e| {
+                            dbg!(e);
+                        })
+                        .anyhow()?;
+
+                    if casted_block.block_info.height == end.height {
+                        is_reach_end = true;
+                    }
+
+                    updates.push(casted_block);
+                }
+
+                _ => unreachable!(),
+            }
         }
 
-        for update in blocks.blocks {
-            if token.is_cancelled() {
-                break;
-            }
-
-            last_indexer_block_number =
-                handle_update(server.clone(), None, update, last_indexer_block_number).await?;
-
-            progress.inc(1);
-
-            if last_indexer_block_number >= end.height {
-                blocks_loader.abort();
-                return Ok(());
-            }
+        if !is_reach_end {
+            blocks_storage
+                .lock()
+                .await
+                .to_load(to_load.expect("Must exist blocks to load"));
         }
+
+        let blocks_counter = updates.len();
+
+        parser::InitialIndexer::handle_batch(updates, &server)
+            .await
+            .inspect_err(|e| {
+                dbg!(e);
+            })
+            .track()
+            .ok();
+
+        progress.inc(blocks_counter as _);
     }
+
+    blocks_loader.abort();
+
+    Ok(())
 }
 
 async fn indexer(

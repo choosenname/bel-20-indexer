@@ -95,7 +95,7 @@ impl ComputeScriptHash for ParsedTokenAddress {
     fn compute_script_hash(&self) -> FullHash {
         match self {
             ParsedTokenAddress::Standard(str) => str.compute_script_hash(),
-            ParsedTokenAddress::NonStandard(hash) => hash.clone(),
+            ParsedTokenAddress::NonStandard(hash) => *hash,
         }
     }
 }
