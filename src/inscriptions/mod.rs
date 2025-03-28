@@ -33,38 +33,24 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
             })?,
     );
 
-    loop {
-        if let Err(e) = async {
-            let last_electris_block = client.get_last_electrs_block_meta().await?;
+    let last_electris_block = client.get_last_electrs_block_meta().await?;
 
-            if let Some(block_number) = last_electris_block
-                .height
-                .checked_sub(reorg::REORG_CACHE_MAX_LEN as u32)
-            {
-                let end_block = client.get_electrs_block_meta(block_number).await?;
-                initial_indexer(token.clone(), server.clone(), client.clone(), end_block).await?;
-                return Ok(());
-            }
-
-            indexer(
-                token.clone(),
-                server.clone(),
-                client.clone(),
-                reorg_cache.clone(),
-            )
-            .await?;
-
-            Ok::<(), anyhow::Error>(())
-        }
-        .await
-        {
-            error!("An error occurred: {:?}, retrying...", e);
-            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-            continue;
-        }
-
-        break;
+    if let Some(block_number) = last_electris_block
+        .height
+        .checked_sub(reorg::REORG_CACHE_MAX_LEN as u32)
+    {
+        let end_block = client.get_electrs_block_meta(block_number).await?;
+        initial_indexer(token.clone(), server.clone(), client.clone(), end_block).await?;
+        return Ok(());
     }
+
+    indexer(
+        token.clone(),
+        server.clone(),
+        client.clone(),
+        reorg_cache.clone(),
+    )
+    .await?;
 
     info!("Server is finished");
 
@@ -83,22 +69,6 @@ async fn initial_indexer(
 ) -> anyhow::Result<()> {
     println!("Initial indexer");
 
-    let blocks_storage = Arc::new(tokio::sync::Mutex::new(
-        crate::server::threads::blocks_loader::LoadedBlocks::default(),
-    ));
-
-    let blocks_loader = dutils::async_thread::ThreadController::new(
-        crate::server::threads::blocks_loader::BlocksLoader {
-            storage: blocks_storage.clone(),
-            client: client.clone(),
-        },
-    )
-    .with_name("BlocksLoader")
-    .with_restart(Duration::from_secs(5))
-    .with_invoke_frq(Duration::from_secs(1))
-    .with_cancellation(token.clone())
-    .run();
-
     let last_electris_block = client.get_last_electrs_block_meta().await?;
     let block_number = server.db.last_block.get(()).unwrap_or_default(); // todo get real first block
 
@@ -113,10 +83,25 @@ async fn initial_indexer(
         client.get_electrs_block_meta(block_number).await?
     };
 
-    blocks_storage
-        .lock()
-        .await
-        .to_load(last_indexer_block.into());
+    let blocks_storage = Arc::new(tokio::sync::Mutex::new(
+        crate::server::threads::blocks_loader::LoadedBlocks {
+            from_block_number: last_indexer_block.height,
+            to_block_number: last_electris_block.height,
+            ..Default::default()
+        },
+    ));
+
+    let blocks_loader = dutils::async_thread::ThreadController::new(
+        crate::server::threads::blocks_loader::BlocksLoader {
+            storage: blocks_storage.clone(),
+            client: client.clone(),
+        },
+    )
+    .with_name("BlocksLoader")
+    .with_restart(Duration::from_secs(5))
+    .with_invoke_frq(Duration::from_secs(1))
+    .with_cancellation(token.clone())
+    .run();
 
     let mut sleep = token.repeat_until_cancel(Duration::from_secs(1));
     let mut is_reach_end = false;
@@ -129,18 +114,19 @@ async fn initial_indexer(
             continue;
         };
 
-        let to_load = blocks
+        let block_number = server.db.last_block.get(()).unwrap_or_default();
+        let first_block_number = blocks
             .blocks
-            .last()
+            .first()
             .map(|x| match x {
-                electrs_client::Update::AddBlock { block, .. } => BlockHeader {
-                    number: block.block_info.height,
-                    hash: block.block_info.block_hash.into(),
-                    prev_hash: block.block_info.prev_block_hash.into(),
-                },
-                _ => panic!("Got reorg wtf?"),
+                electrs_client::Update::AddBlock { height, .. } => *height,
+                _ => unimplemented!(),
             })
-            .clone();
+            .expect("Must exist");
+
+        if block_number != 0 && block_number != first_block_number - 1 {
+            panic!("Got blocks with gap, in db #{block_number} but got #{first_block_number}");
+        }
 
         let mut updates = Vec::<types::ParsedTokenHistoryData>::new();
 
@@ -165,13 +151,6 @@ async fn initial_indexer(
             }
         }
 
-        if !is_reach_end {
-            blocks_storage
-                .lock()
-                .await
-                .to_load(to_load.expect("Must exist blocks to load"));
-        }
-
         let blocks_counter = updates.len();
 
         parser::InitialIndexer::handle_batch(updates, &server)
@@ -182,7 +161,7 @@ async fn initial_indexer(
             .track()
             .ok();
 
-        progress.inc(blocks_counter as _);
+        //progress.inc(blocks_counter as _);
     }
 
     blocks_loader.abort();
