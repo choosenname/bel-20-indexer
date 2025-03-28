@@ -3,9 +3,10 @@ use crate::tokens::{FullHash, TokenTick};
 use dutils::error::ContextWrapper;
 use electrs_client::{Fetchable, UpdateCapable};
 use itertools::Itertools;
-use nintondo_dogecoin::{Address, BlockHash, ScriptBuf};
+use nintondo_dogecoin::{Address, BlockHash, OutPoint, ScriptBuf};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use nintondo_dogecoin::hashes::Hash;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TokenHistoryData {
@@ -263,7 +264,7 @@ pub enum ParsedTokenAction {
         amt: Fixed128,
     },
     SpentTransfer {
-        outpoint: Option<Outpoint>,
+        outpoint: Option<OutPoint>,
         tick: TokenTick,
         amt: Fixed128,
     },
@@ -287,7 +288,7 @@ pub enum ParsedTokenActionRest {
         amt: Fixed128,
     },
     SpentTransfer {
-        outpoint: Option<Outpoint>,
+        outpoint: Option<OutPoint>,
         tick: TokenTick,
         amt: Fixed128,
     },

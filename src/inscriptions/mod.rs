@@ -1,4 +1,5 @@
 use super::*;
+use std::default::Default;
 
 pub const PROTOCOL_ID: &[u8; 3] = b"ord";
 
@@ -12,7 +13,7 @@ pub mod types;
 mod utils;
 
 use dutils::async_thread::Thread;
-use electrs_client::{BlockMeta, UpdateCapable};
+use electrs_client::{BlockMeta, Update, UpdateCapable};
 use envelope::{ParsedEnvelope, RawEnvelope};
 use jsonrpc_async::client;
 use searcher::InscriptionSearcher;
@@ -24,7 +25,6 @@ pub use utils::ScriptToAddr;
 pub use structs::Location;
 
 pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<()> {
-    let reorg_cache = Arc::new(parking_lot::Mutex::new(reorg::ReorgCache::new()));
     let client = Arc::new(
         electrs_client::Client::<TokenHistoryData>::new_from_cfg(server.client.clone())
             .await
@@ -34,14 +34,26 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
     );
 
     let last_electris_block = client.get_last_electrs_block_meta().await?;
-
     if let Some(block_number) = last_electris_block
         .height
         .checked_sub(reorg::REORG_CACHE_MAX_LEN as u32)
     {
         let end_block = client.get_electrs_block_meta(block_number).await?;
         initial_indexer(token.clone(), server.clone(), client.clone(), end_block).await?;
-        return Ok(());
+    }
+
+    let reorg_cache = Arc::new(parking_lot::Mutex::new(reorg::ReorgCache::new()));
+    if !token.is_cancelled() {
+        let indexer_block_number = server.db.last_block.get(()).unwrap_or_default();
+        let indexer_block_meta = client
+            .get_electrs_block_meta(indexer_block_number)
+            .await
+            .anyhow()?;
+        // set mock reorg data for block to start indexer
+        // it's safe because this mock data will be dropped
+        reorg_cache
+            .lock()
+            .new_block(indexer_block_meta.into(), u64::MAX);
     }
 
     indexer(
@@ -70,7 +82,7 @@ async fn initial_indexer(
     println!("Initial indexer");
 
     let last_electris_block = client.get_last_electrs_block_meta().await?;
-    let block_number = server.db.last_block.get(()).unwrap_or_default(); // todo get real first block
+    let block_number = server.db.last_block.get(()).unwrap_or_default();
 
     let progress = crate::utils::Progress::begin(
         "Indexing",
@@ -124,6 +136,10 @@ async fn initial_indexer(
             })
             .expect("Must exist");
 
+        if block_number == 0 {
+            progress.reset_c(first_block_number as _);
+        }
+
         if block_number != 0 && block_number != first_block_number - 1 {
             panic!("Got blocks with gap, in db #{block_number} but got #{first_block_number}");
         }
@@ -145,27 +161,20 @@ async fn initial_indexer(
                     }
 
                     updates.push(casted_block);
+                    progress.inc(1 as _);
                 }
 
                 _ => unreachable!(),
             }
         }
 
-        let blocks_counter = updates.len();
-
-        parser::InitialIndexer::handle_batch(updates, &server)
+        parser::InitialIndexer::handle_batch(updates, &server, None)
             .await
             .inspect_err(|e| {
                 dbg!(e);
             })
             .track()
             .ok();
-
-        if block_number == 0 {
-            progress.reset_c(first_block_number as _);
-        } else {
-            progress.inc(blocks_counter as _);
-        }
     }
 
     blocks_loader.abort();
@@ -181,10 +190,8 @@ async fn indexer(
 ) -> anyhow::Result<()> {
     println!("Indexer");
 
-    let last_indexer_block = {
-        let block_number = server.db.last_block.get(()).unwrap_or_default();
-        client.get_electrs_block_meta(block_number).await?
-    };
+    let mut last_index_height = server.db.last_block.get(()).unwrap_or_default();
+    let last_indexer_block = client.get_electrs_block_meta(last_index_height).await?;
 
     let mut repeater = token.repeat_until_cancel(Duration::from_secs(1));
     while repeater.next().await {
@@ -213,80 +220,54 @@ async fn indexer(
             break;
         };
 
-        for update in updates? {
-            if token.is_cancelled() {
-                break;
-            }
+        let mut parsed_updates = Vec::<types::ParsedTokenHistoryData>::new();
 
-            handle_update(
-                server.clone(),
-                Some(reorg_cache.clone()),
-                update,
-                last_indexer_block.height,
-            )
-            .await?;
+        for block in updates? {
+            match block {
+                electrs_client::Update::AddBlock { block, height, .. } => {
+                    let casted_block: types::ParsedTokenHistoryData = block
+                        .try_into()
+                        .inspect_err(|e| {
+                            dbg!(e);
+                        })
+                        .anyhow()?;
+
+                    parsed_updates.push(casted_block);
+                    last_index_height = height;
+                }
+                Update::RemoveBlock { height } | Update::RemoveCachedBlock { height, .. } => {
+                    let reorg_counter = last_index_height - height;
+
+                    warn!(
+                        "Reorg detected: {} blocks, reorg height {}",
+                        reorg_counter, height
+                    );
+
+                    reorg_cache
+                        .lock()
+                        .restore(&server, height)
+                        .inspect_err(|e| {
+                            dbg!(e);
+                        })?;
+
+                    server
+                        .event_sender
+                        .send(ServerEvent::Reorg(reorg_counter, height))
+                        .ok();
+                    last_index_height -= reorg_counter;
+                }
+            }
         }
 
-        info!("Last block: {}", last_indexer_block.height);
+        parser::InitialIndexer::handle_batch(parsed_updates, &server, Some(reorg_cache.clone()))
+            .await
+            .inspect_err(|e| {
+                dbg!(e);
+            })
+            .track()
+            .ok();
     }
-
-    info!("Server is finished");
-
-    reorg_cache.lock().restore_all(&server).track().ok();
-
-    server.db.flush_all();
-
     Ok(())
-}
-
-async fn handle_update(
-    server: Arc<Server>,
-    reorg_cache: Option<Arc<parking_lot::Mutex<reorg::ReorgCache>>>,
-    update: electrs_client::Update<TokenHistoryData>,
-    last_index_height: u32,
-) -> anyhow::Result<u32> {
-    let new_block_number = match update {
-        electrs_client::Update::AddBlock { block, .. } => {
-            let number = block.block_info.height;
-            let token_history_data = block
-                .try_into()
-                .inspect_err(|e| {
-                    dbg!(e);
-                })
-                .anyhow()?;
-            parser::InitialIndexer::handle(token_history_data, server.clone(), reorg_cache)
-                .await
-                .inspect_err(|e| {
-                    dbg!(e);
-                })
-                .track()
-                .ok();
-            number
-        }
-        electrs_client::Update::RemoveBlock { height }
-        | electrs_client::Update::RemoveCachedBlock { height, .. } => {
-            let reorg_counter = last_index_height - height;
-
-            warn!(
-                "Reorg detected: {} blocks, reorg height {}",
-                reorg_counter, height
-            );
-
-            if let Some(cache) = reorg_cache {
-                cache.lock().restore(&server, height).inspect_err(|e| {
-                    dbg!(e);
-                })?;
-            }
-
-            server
-                .event_sender
-                .send(ServerEvent::Reorg(reorg_counter, height))
-                .ok();
-            height - 1
-        }
-    };
-
-    Ok(new_block_number)
 }
 
 async fn load_blocks(
