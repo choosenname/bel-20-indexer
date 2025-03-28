@@ -123,8 +123,6 @@ impl Handler for BlocksLoader {
             }
         };
 
-        dbg!(&block_numbers);
-
         let now = Instant::now();
         let block_metas = self.fetch_block_metas(block_numbers).await.anyhow()?;
 

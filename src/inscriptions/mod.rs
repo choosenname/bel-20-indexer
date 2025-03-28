@@ -161,7 +161,11 @@ async fn initial_indexer(
             .track()
             .ok();
 
-        //progress.inc(blocks_counter as _);
+        if block_number == 0 {
+            progress.reset_c(first_block_number as _);
+        } else {
+            progress.inc(blocks_counter as _);
+        }
     }
 
     blocks_loader.abort();
