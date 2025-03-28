@@ -133,6 +133,7 @@ impl InitialIndexer {
             .and_then(|height| server.db.proof_of_history.get(height))
             .unwrap_or(*DEFAULT_HASH);
 
+        // store only standard addresses
         let mut full_hash_to_address = HashMap::<FullHash, String>::new();
 
         for block in token_history_data {
@@ -198,14 +199,31 @@ impl InitialIndexer {
                 }
             }
 
-            let new_block_proof = Server::generate_history_hash(
-                prev_proof,
-                &block_history,
-                &block_cache.full_hash_to_address,
-            )
-            .expect("Must generate history proof");
+            let rest_addresses = block_cache
+                .addresses
+                .into_iter()
+                .flat_map(|x| match x {
+                    types::ParsedTokenAddress::Standard(script) => {
+                        script.to_address_str(*NETWORK).map(|v| {
+                            let full_hash = script.compute_script_hash();
+                            let str_address = if script.is_op_return() {
+                                OP_RETURN_ADDRESS.to_string()
+                            } else {
+                                full_hash_to_address.insert(full_hash, v.clone());
+                                v
+                            };
+                            (full_hash, str_address)
+                        })
+                    }
+                    types::ParsedTokenAddress::NonStandard(full_hash) => {
+                        Some((full_hash, NON_STANDARD_ADDRESS.to_string()))
+                    }
+                })
+                .collect();
 
-            full_hash_to_address.extend(block_cache.full_hash_to_address);
+            let new_block_proof =
+                Server::generate_history_hash(prev_proof, &block_history, &rest_addresses)
+                    .expect("Must generate history proof");
 
             block_height_to_history.insert(
                 block.block_info.height,
@@ -554,7 +572,7 @@ impl SharedBatchCache {
 
 #[derive(Default, Clone)]
 pub struct BlockCache {
-    pub full_hash_to_address: HashMap<FullHash, String>,
+    pub addresses: HashSet<types::ParsedTokenAddress>,
     pub tokens: HashSet<LowerCaseTick>,
     pub address_token: HashSet<AddressToken>,
     pub address_transfer_location: HashSet<AddressLocation>,
@@ -568,7 +586,7 @@ impl BatchCache {
         for block in history {
             let mut block_cache = BlockCache::default();
             let mut inscription_idx = 0;
-            let mut temp_addresses = HashSet::new();
+            let mut addresses = HashSet::new();
 
             for inscription in &block.inscriptions {
                 // got txid:vout where token action was happened
@@ -595,8 +613,8 @@ impl BatchCache {
 
                         block_cache.tokens.insert(token);
                         block_cache.address_token.insert(account);
-                        temp_addresses.insert(inscription.from.clone());
-                        temp_addresses.insert(inscription.to.clone());
+                        addresses.insert(inscription.from.clone());
+                        addresses.insert(inscription.to.clone());
                     }
                     types::ParsedTokenActionRest::DeployTransfer { tick, amt }
                         if !inscription.leaked =>
@@ -636,8 +654,8 @@ impl BatchCache {
                             .address_transfer_location
                             .insert(address_location);
                         block_cache.address_token.insert(account);
-                        temp_addresses.insert(inscription.to.clone());
-                        temp_addresses.insert(inscription.from.clone());
+                        addresses.insert(inscription.to.clone());
+                        addresses.insert(inscription.from.clone());
                     }
                     types::ParsedTokenActionRest::SpentTransfer { tick, .. } => {
                         let token: LowerCaseTick = tick.into();
@@ -668,8 +686,8 @@ impl BatchCache {
                                 });
                         }
 
-                        temp_addresses.insert(inscription.to.clone());
-                        temp_addresses.insert(inscription.from.clone());
+                        addresses.insert(inscription.to.clone());
+                        addresses.insert(inscription.from.clone());
                         block_cache.tokens.insert(token.clone());
                         block_cache
                             .address_transfer_location
@@ -712,35 +730,14 @@ impl BatchCache {
                                 },
                                 owner: inscription.to.compute_script_hash(),
                             });
-                        temp_addresses.insert(inscription.to.clone());
-                        temp_addresses.insert(inscription.from.clone());
+                        addresses.insert(inscription.to.clone());
+                        addresses.insert(inscription.from.clone());
                         inscription_idx += 1;
                     }
                     _ => continue,
                 }
             }
-
-            block_cache.full_hash_to_address = temp_addresses
-                .into_iter()
-                .flat_map(|x| match x {
-                    types::ParsedTokenAddress::Standard(script) => {
-                        script.to_address_str(*NETWORK).map(|v| {
-                            (
-                                script.compute_script_hash(),
-                                if script.is_op_return() {
-                                    OP_RETURN_ADDRESS.to_string()
-                                } else {
-                                    v
-                                },
-                            )
-                        })
-                    }
-                    types::ParsedTokenAddress::NonStandard(full_hash) => {
-                        Some((full_hash, NON_STANDARD_ADDRESS.to_string()))
-                    }
-                })
-                .collect();
-
+            block_cache.addresses = addresses;
             block_number_to_block_cache.insert(block.block_info.height, block_cache);
         }
 
