@@ -287,6 +287,7 @@ pub enum ParsedTokenActionRest {
         amt: Fixed128,
     },
     SpentTransfer {
+        outpoint: Option<Outpoint>,
         tick: TokenTick,
         amt: Fixed128,
     },
@@ -310,9 +311,15 @@ impl From<ParsedTokenAction> for ParsedTokenActionRest {
             ParsedTokenAction::DeployTransfer { tick, amt } => {
                 ParsedTokenActionRest::DeployTransfer { tick, amt }
             }
-            ParsedTokenAction::SpentTransfer { tick, amt, .. } => {
-                ParsedTokenActionRest::SpentTransfer { tick, amt }
-            }
+            ParsedTokenAction::SpentTransfer {
+                tick,
+                amt,
+                outpoint,
+            } => ParsedTokenActionRest::SpentTransfer {
+                tick,
+                amt,
+                outpoint,
+            },
         }
     }
 }

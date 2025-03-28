@@ -657,7 +657,7 @@ impl BatchCache {
                         addresses.insert(inscription.to.clone());
                         addresses.insert(inscription.from.clone());
                     }
-                    types::ParsedTokenActionRest::SpentTransfer { tick, .. } => {
+                    types::ParsedTokenActionRest::SpentTransfer { outpoint, tick, .. } => {
                         let token: LowerCaseTick = tick.into();
                         let account = AddressToken {
                             address: inscription.from.compute_script_hash(),
@@ -665,14 +665,15 @@ impl BatchCache {
                         };
 
                         if inscription.leaked {
+                            let leaked_outpoint = outpoint.expect("Must exist leaked outpoint");
                             block_cache
                                 .token_cache
                                 .token_actions
                                 .push(TokenAction::Transferred {
                                     transfer_location: inscription.from_location.into(),
                                     recipient: None,
-                                    txid,
-                                    vout,
+                                    txid: Txid::from_slice(&leaked_outpoint.txid).unwrap(),
+                                    vout: leaked_outpoint.vout,
                                 });
                         } else {
                             block_cache
