@@ -40,6 +40,7 @@ pub async fn main_loop(token: WaitToken, server: Arc<Server>) -> anyhow::Result<
     {
         let end_block = client.get_electrs_block_meta(block_number).await?;
         initial_indexer(token.clone(), server.clone(), client.clone(), end_block).await?;
+        return Ok(());
     }
 
     let reorg_cache = Arc::new(parking_lot::Mutex::new(reorg::ReorgCache::new()));
@@ -158,6 +159,7 @@ async fn initial_indexer(
 
                     if casted_block.block_info.height == end.height {
                         is_reach_end = true;
+                        break;
                     }
 
                     updates.push(casted_block);
@@ -168,6 +170,7 @@ async fn initial_indexer(
             }
         }
 
+        let now = Instant::now();
         parser::InitialIndexer::handle_batch(updates, &server, None)
             .await
             .inspect_err(|e| {
@@ -175,6 +178,12 @@ async fn initial_indexer(
             })
             .track()
             .ok();
+
+        info!(
+            "handle_batch #{} took {}s",
+            server.db.last_block.get(()).unwrap_or_default(),
+            now.elapsed().as_secs_f32()
+        );
     }
 
     blocks_loader.abort();

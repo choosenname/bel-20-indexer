@@ -88,7 +88,7 @@ impl BlocksLoader {
         result
     }
 
-    fn generate_shit(mut from: u32, to: u32, batch_size: u32, mut batch_count: u32) -> Vec<u32> {
+    fn generate_blocks_batch_sequense(mut from: u32, to: u32, batch_size: u32, mut batch_count: u32) -> Vec<u32> {
         let mut result = Vec::with_capacity(batch_count as _);
         while from <= to && batch_count != 0 {
             result.push(from);
@@ -101,6 +101,7 @@ impl BlocksLoader {
 
 impl Handler for BlocksLoader {
     async fn run(&mut self) -> anyhow::Result<()> {
+      
         let block_numbers = {
             let lock = self.storage.lock().await;
             if lock.from_block_number >= lock.to_block_number {
@@ -114,7 +115,7 @@ impl Handler for BlocksLoader {
             if lock.from_block_number == 0 {
                 vec![0]
             } else {
-                Self::generate_shit(
+                Self::generate_blocks_batch_sequense(
                     lock.from_block_number,
                     lock.to_block_number,
                     self.client.config.limit.unwrap_or(1000),
@@ -133,6 +134,7 @@ impl Handler for BlocksLoader {
         if blocks.is_empty() {
             return Ok(());
         }
+
         let from = blocks
             .first()
             .map(|x| x.from.number)

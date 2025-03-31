@@ -36,7 +36,7 @@ impl Server {
                 url: URL.to_string(),
                 user: USER.to_string(),
                 password: PASS.to_string(),
-                limit: Some(2000),
+                limit: Some(1000),
                 reorgs_path: None,
             },
             addr_tx: Arc::new(addr_tx),
