@@ -213,96 +213,96 @@ impl TokenCache {
         None
     }
 
-    pub fn transferred(&mut self, location: Location, recipient: FullHash, txid: Txid, vout: u32) {
-        self.token_actions.push(TokenAction::Transferred {
-            transfer_location: location,
-            recipient: Some(recipient),
-            txid,
-            vout,
-        });
-    }
+    // pub fn transferred(&mut self, location: Location, recipient: FullHash, txid: Txid, vout: u32) {
+    //     self.token_actions.push(TokenAction::Transferred {
+    //         transfer_location: location,
+    //         recipient: Some(recipient),
+    //         txid,
+    //         vout,
+    //     });
+    // }
 
-    pub fn burned_transfer(&mut self, location: Location, txid: Txid, vout: u32) {
-        self.token_actions.push(TokenAction::Transferred {
-            transfer_location: location,
-            recipient: None,
-            txid,
-            vout,
-        });
-    }
+    // pub fn burned_transfer(&mut self, location: Location, txid: Txid, vout: u32) {
+    //     self.token_actions.push(TokenAction::Transferred {
+    //         transfer_location: location,
+    //         recipient: None,
+    //         txid,
+    //         vout,
+    //     });
+    // }
 
-    pub fn load_tokens_data(&mut self, db: &DB) -> anyhow::Result<()> {
-        let (tickers, users) = self.fill_tickers_and_users();
+    // pub fn load_tokens_data(&mut self, db: &DB) -> anyhow::Result<()> {
+    //     let (tickers, users) = self.fill_tickers_and_users();
 
-        self.tokens = db
-            .token_to_meta
-            .multi_get(tickers.iter())
-            .into_iter()
-            .zip(tickers)
-            .filter_map(|(v, k)| v.map(|x| (k, TokenMeta::from(x))))
-            .collect::<HashMap<_, _>>();
+    //     self.tokens = db
+    //         .token_to_meta
+    //         .multi_get(tickers.iter())
+    //         .into_iter()
+    //         .zip(tickers)
+    //         .filter_map(|(v, k)| v.map(|x| (k, TokenMeta::from(x))))
+    //         .collect::<HashMap<_, _>>();
 
-        self.token_accounts = db.load_token_accounts(users);
+    //     self.token_accounts = db.load_token_accounts(users);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    fn fill_tickers_and_users(&mut self) -> (Tickers, Users) {
-        let mut tickers: Tickers = HashSet::new();
-        let mut users: Users = HashSet::new();
+    // fn fill_tickers_and_users(&mut self) -> (Tickers, Users) {
+    //     let mut tickers: Tickers = HashSet::new();
+    //     let mut users: Users = HashSet::new();
 
-        for action in &self.token_actions {
-            match action {
-                TokenAction::Deploy {
-                    proto: DeployProtoDB { tick, .. },
-                    ..
-                } => {
-                    // Load ticks because we need to check if tick is deployed
-                    tickers.insert(tick.into());
-                }
-                TokenAction::Mint {
-                    owner,
-                    proto: MintProto::Bel20 { tick, .. },
-                    ..
-                } => {
-                    tickers.insert(tick.into());
-                    users.insert((*owner, tick.into()));
-                }
-                TokenAction::Transfer {
-                    owner,
-                    proto: TransferProto::Bel20 { tick, .. },
-                    ..
-                } => {
-                    tickers.insert(tick.into());
-                    users.insert((*owner, tick.into()));
-                }
-                TokenAction::Transferred {
-                    transfer_location,
-                    recipient,
-                    ..
-                } => {
-                    let valid_transfer = self.valid_transfers.get(transfer_location);
-                    let proto = self
-                        .all_transfers
-                        .get(transfer_location)
-                        .map(|x| Some(x.clone()))
-                        .unwrap_or_else(|| {
-                            valid_transfer.map(|x| Some(x.1.clone())).unwrap_or(None)
-                        });
-                    if let Some(TransferProtoDB { tick, .. }) = proto {
-                        if let Some(recipient) = recipient {
-                            users.insert((*recipient, tick.into()));
-                            if let Some(transfer) = valid_transfer {
-                                users.insert((transfer.0, tick.into()));
-                            }
-                            tickers.insert(tick.into());
-                        }
-                    }
-                }
-            }
-        }
-        (tickers, users)
-    }
+    //     for action in &self.token_actions {
+    //         match action {
+    //             TokenAction::Deploy {
+    //                 proto: DeployProtoDB { tick, .. },
+    //                 ..
+    //             } => {
+    //                 // Load ticks because we need to check if tick is deployed
+    //                 tickers.insert(tick.into());
+    //             }
+    //             TokenAction::Mint {
+    //                 owner,
+    //                 proto: MintProto::Bel20 { tick, .. },
+    //                 ..
+    //             } => {
+    //                 tickers.insert(tick.into());
+    //                 users.insert((*owner, tick.into()));
+    //             }
+    //             TokenAction::Transfer {
+    //                 owner,
+    //                 proto: TransferProto::Bel20 { tick, .. },
+    //                 ..
+    //             } => {
+    //                 tickers.insert(tick.into());
+    //                 users.insert((*owner, tick.into()));
+    //             }
+    //             TokenAction::Transferred {
+    //                 transfer_location,
+    //                 recipient,
+    //                 ..
+    //             } => {
+    //                 let valid_transfer = self.valid_transfers.get(transfer_location);
+    //                 let proto = self
+    //                     .all_transfers
+    //                     .get(transfer_location)
+    //                     .map(|x| Some(x.clone()))
+    //                     .unwrap_or_else(|| {
+    //                         valid_transfer.map(|x| Some(x.1.clone())).unwrap_or(None)
+    //                     });
+    //                 if let Some(TransferProtoDB { tick, .. }) = proto {
+    //                     if let Some(recipient) = recipient {
+    //                         users.insert((*recipient, tick.into()));
+    //                         if let Some(transfer) = valid_transfer {
+    //                             users.insert((transfer.0, tick.into()));
+    //                         }
+    //                         tickers.insert(tick.into());
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     (tickers, users)
+    // }
 
     pub fn process_token_actions(
         &mut self,
@@ -498,6 +498,7 @@ impl TokenCache {
                     let Some(token) = self.tokens.get_mut(&tick.into()) else {
                         continue;
                     };
+
                     let DeployProtoDB { transactions, .. } = &mut token.proto;
 
                     holders.decrease(&old_key, old_account, amt);
@@ -505,39 +506,34 @@ impl TokenCache {
                     old_account.transferable_balance -= amt;
                     *transactions += 1;
 
-                    if let Some(recipient) = recipient {
-                        let key = AddressToken {
+                    if !recipient.is_op_return_hash() {
+                        let recipient_key = AddressToken {
                             address: recipient,
                             token: tick.into(),
                         };
 
                         holders.increase(
-                            &key,
+                            &recipient_key,
                             self.token_accounts
-                                .get(&key)
+                                .get(&recipient_key)
                                 .unwrap_or(&TokenBalance::default()),
                             amt,
                         );
-                        self.token_accounts.entry(key).or_default().balance += amt;
 
-                        history.push(HistoryTokenAction::Send {
-                            amt,
-                            tick,
-                            recipient,
-                            sender,
-                            txid,
-                            vout,
-                        });
-                    } else {
-                        history.push(HistoryTokenAction::Send {
-                            tick,
-                            amt,
-                            recipient: sender,
-                            sender,
-                            txid,
-                            vout,
-                        });
+                        self.token_accounts
+                            .entry(recipient_key)
+                            .or_default()
+                            .balance += amt;
                     }
+
+                    history.push(HistoryTokenAction::Send {
+                        amt,
+                        tick,
+                        recipient,
+                        sender,
+                        txid,
+                        vout,
+                    });
 
                     if let Some(x) = reorg_cache.as_ref() {
                         x.lock().removed_transfer_token(

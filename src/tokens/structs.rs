@@ -523,7 +523,7 @@ pub enum TokenAction {
     /// Founded move of transfer action.
     Transferred {
         transfer_location: Location,
-        recipient: Option<FullHash>,
+        recipient: FullHash,
         txid: Txid,
         vout: u32,
     },

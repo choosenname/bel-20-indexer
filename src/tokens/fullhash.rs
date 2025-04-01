@@ -94,7 +94,8 @@ impl ComputeScriptHash for String {
 impl ComputeScriptHash for ParsedTokenAddress {
     fn compute_script_hash(&self) -> FullHash {
         match self {
-            ParsedTokenAddress::Standard(str) => str.compute_script_hash(),
+            ParsedTokenAddress::Standard(str) if !str.is_op_return() => str.compute_script_hash(),
+            ParsedTokenAddress::Standard(_) => *OP_RETURN_HASH,
             ParsedTokenAddress::NonStandard(hash) => *hash,
         }
     }
