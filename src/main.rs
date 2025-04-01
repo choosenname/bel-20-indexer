@@ -124,10 +124,6 @@ async fn main() {
 
     let server1 = server.clone();
 
-    // for x in server1.db.fullhash_to_address.iter() {
-    //     dbg!(x.1);
-    // }
-
     let result = join_all([
         signal_handler,
         server1

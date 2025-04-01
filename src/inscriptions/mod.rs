@@ -163,12 +163,13 @@ async fn initial_indexer(
                     }
 
                     updates.push(casted_block);
-                    progress.inc(1 as _);
                 }
 
                 _ => unreachable!(),
             }
         }
+
+        let blocks_counter = updates.len();
 
         let now = Instant::now();
         parser::InitialIndexer::handle_batch(updates, &server, None)
@@ -184,6 +185,8 @@ async fn initial_indexer(
             server.db.last_block.get(()).unwrap_or_default(),
             now.elapsed().as_secs_f32()
         );
+
+        progress.inc(blocks_counter as _);
     }
 
     blocks_loader.abort();
