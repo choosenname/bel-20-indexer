@@ -107,7 +107,7 @@ async fn main() {
     dotenv::dotenv().unwrap();
     utils::init_logger();
 
-    let (addr_rx, raw_event_tx, event_tx, server) = Server::new("rocksdb").await.unwrap();
+    let (raw_event_tx, event_tx, server) = Server::new("rocksdb").await.unwrap();
 
     let server = Arc::new(server);
 
@@ -131,7 +131,7 @@ async fn main() {
     let result = join_all([
         signal_handler,
         server1
-            .run_threads(server.token.clone(), addr_rx, raw_event_tx, event_tx)
+            .run_threads(server.token.clone(), raw_event_tx, event_tx)
             .spawn(),
         run_rest(server.token.clone(), server.clone()).spawn(),
         inscriptions::main_loop(server.token.clone(), server.clone()).spawn(),

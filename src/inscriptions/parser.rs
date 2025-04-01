@@ -210,7 +210,13 @@ impl InitialIndexer {
             .address_location_to_transfer
             .extend(shared_cache.address_location_to_transfer);
 
-        for (height, block_history) in &block_height_to_history {
+        // write all addresses
+        server.db.fullhash_to_address.extend(full_hash_to_address);
+
+        for (height, block_history) in block_height_to_history
+            .iter()
+            .sorted_by_key(|(block_number, _)| *block_number)
+        {
             let history_idx = block_history
                 .history
                 .iter()
@@ -244,10 +250,6 @@ impl InitialIndexer {
 
         server.db.last_history_id.set((), last_history_id);
         server.db.last_block.set((), last_block_height);
-
-        // write all addresses
-        server.db.fullhash_to_address.extend(full_hash_to_address);
-
         *server.last_indexed_address_height.write().await = last_block_height;
 
         for (block_height, block_history) in block_height_to_history
@@ -270,6 +272,7 @@ impl InitialIndexer {
                     block_history.block_hash,
                 ))
                 .ok();
+
             if server.raw_event_sender.send(block_history.history).is_err()
                 && !server.token.is_cancelled()
             {

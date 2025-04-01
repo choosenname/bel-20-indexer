@@ -3,7 +3,6 @@ use super::*;
 mod structs;
 pub mod threads;
 pub use structs::*;
-use threads::AddressesToLoad;
 
 pub struct Server {
     pub db: Arc<DB>,
@@ -11,7 +10,6 @@ pub struct Server {
     pub raw_event_sender: kanal::Sender<RawServerEvent>,
     pub token: WaitToken,
     pub last_indexed_address_height: Arc<tokio::sync::RwLock<u32>>,
-    pub addr_tx: Arc<kanal::Sender<AddressesToLoad>>,
     pub client: electrs_client::Config,
     pub holders: Arc<Holders>,
 }
@@ -20,14 +18,12 @@ impl Server {
     pub async fn new(
         db_path: &str,
     ) -> anyhow::Result<(
-        kanal::Receiver<AddressesToLoad>,
         kanal::Receiver<RawServerEvent>,
         tokio::sync::broadcast::Sender<ServerEvent>,
         Self,
     )> {
         let (raw_tx, raw_rx) = kanal::unbounded();
         let (tx, _) = tokio::sync::broadcast::channel(30_000);
-        let (addr_tx, addr_rx) = kanal::unbounded();
         let token = WaitToken::default();
         let db = Arc::new(DB::open(db_path));
 
@@ -39,7 +35,6 @@ impl Server {
                 limit: Some(1000),
                 reorgs_path: None,
             },
-            addr_tx: Arc::new(addr_tx),
             holders: Arc::new(Holders::init(&db)),
             db,
             raw_event_sender: raw_tx.clone(),
@@ -48,7 +43,7 @@ impl Server {
             event_sender: tx.clone(),
         };
 
-        Ok((addr_rx, raw_rx, tx, server))
+        Ok((raw_rx, tx, server))
     }
 
     pub async fn load_addresses(

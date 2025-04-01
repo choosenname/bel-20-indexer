@@ -83,18 +83,17 @@ async fn initial_indexer(
     println!("Initial indexer");
 
     let last_electris_block = client.get_last_electrs_block_meta().await?;
-    let block_number = server.db.last_block.get(()).unwrap_or_default();
+    let last_indexer_block_number = server.db.last_block.get(()).unwrap_or_default();
 
     let progress = crate::utils::Progress::begin(
         "Indexing",
         last_electris_block.height as _,
-        block_number as _,
+        last_indexer_block_number as _,
     );
 
-    let last_indexer_block = {
-        let block_number = server.db.last_block.get(()).unwrap_or_default();
-        client.get_electrs_block_meta(block_number).await?
-    };
+    let last_indexer_block = client
+        .get_electrs_block_meta(last_indexer_block_number)
+        .await?;
 
     let blocks_storage = Arc::new(tokio::sync::Mutex::new(
         crate::server::threads::blocks_loader::LoadedBlocks {
@@ -123,11 +122,10 @@ async fn initial_indexer(
             if !sleep.next().await || token.is_cancelled() {
                 return Ok(());
             }
-
             continue;
         };
 
-        let block_number = server.db.last_block.get(()).unwrap_or_default();
+        let last_indexer_block_number = server.db.last_block.get(()).unwrap_or_default();
         let first_block_number = blocks
             .blocks
             .first()
@@ -137,12 +135,14 @@ async fn initial_indexer(
             })
             .expect("Must exist");
 
-        if block_number == 0 {
+        if last_indexer_block_number == 0 {
             progress.reset_c(first_block_number as _);
         }
 
-        if block_number != 0 && block_number != first_block_number - 1 {
-            panic!("Got blocks with gap, in db #{block_number} but got #{first_block_number}");
+        if last_indexer_block_number != 0 && last_indexer_block_number != first_block_number - 1 {
+            panic!(
+                "Got blocks with gap, in db #{last_indexer_block_number} but got #{first_block_number}"
+            );
         }
 
         let mut updates = Vec::<types::ParsedTokenHistoryData>::new();
