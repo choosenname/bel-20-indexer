@@ -66,9 +66,7 @@ impl InitialIndexer {
                 cache
                     .lock()
                     .new_block(block.block_info.into(), last_history_id);
-            }
 
-            if reorg_cache.is_some() {
                 debug!(
                     "Syncing block: {} ({})",
                     block.block_info.block_hash, block.block_info.height
@@ -300,18 +298,24 @@ pub struct SharedBatchCache {
 
 impl SharedBatchCache {
     pub fn generate_block_token_cache(&mut self, block_cache: &BlockCache) -> TokenCache {
-        let tokens: HashMap<_, _> = self
-            .token_to_meta
+        let tokens: HashMap<_, _> = block_cache
+            .tokens
             .iter()
-            .filter(|(key, _)| block_cache.tokens.contains(key))
-            .map(|(tick, meta)| (tick.clone(), meta.clone()))
+            .flat_map(|tick| {
+                self.token_to_meta
+                    .remove(tick)
+                    .map(|meta| (tick.clone(), meta))
+            })
             .collect();
 
-        let token_accounts: HashMap<_, _> = self
-            .account_to_balance
+        let token_accounts: HashMap<_, _> = block_cache
+            .address_token
             .iter()
-            .filter(|(key, _)| block_cache.address_token.contains(key))
-            .map(|(address, balance)| (address.clone(), balance.clone()))
+            .flat_map(|address_token| {
+                self.account_to_balance
+                    .remove(address_token)
+                    .map(|balance| (address_token.clone(), balance))
+            })
             .collect();
 
         let mut valid_transfers = BTreeMap::<_, _>::new();
@@ -336,7 +340,6 @@ impl SharedBatchCache {
         self.token_to_meta.extend(token_cache.tokens);
         // update address balance from block
         self.account_to_balance.extend(token_cache.token_accounts);
-
         // return not spent transfers from block
         self.address_location_to_transfer.extend(
             token_cache
@@ -448,7 +451,7 @@ impl BatchCache {
                                 .token_actions
                                 .push(TokenAction::Transferred {
                                     transfer_location: inscription.from_location.into(),
-                                    recipient: None,
+                                    recipient: account.address,
                                     txid: leaked_outpoint.txid,
                                     vout: leaked_outpoint.vout,
                                 });
@@ -458,7 +461,7 @@ impl BatchCache {
                                 .token_actions
                                 .push(TokenAction::Transferred {
                                     transfer_location: inscription.from_location.into(),
-                                    recipient: Some(inscription.to.compute_script_hash()),
+                                    recipient: inscription.to.compute_script_hash(),
                                     txid,
                                     vout,
                                 });
@@ -515,23 +518,30 @@ impl BatchCache {
                     _ => continue,
                 }
             }
+
             block_cache.addresses = addresses;
             block_number_to_block_cache.insert(block.block_info.height, block_cache);
         }
 
-        let ticks: HashSet<_> = block_number_to_block_cache
+        let ticks: Vec<_> = block_number_to_block_cache
             .values()
-            .flat_map(|x| x.tokens.clone())
+            .flat_map(|x| x.tokens.clone().into_iter())
+            .sorted()
+            .unique()
             .collect();
 
-        let address_token: HashSet<_> = block_number_to_block_cache
+        let address_token: Vec<_> = block_number_to_block_cache
             .values()
-            .flat_map(|x| x.address_token.clone())
+            .flat_map(|x| x.address_token.clone().into_iter())
+            .sorted()
+            .unique()
             .collect();
 
-        let address_transfer_location: HashSet<_> = block_number_to_block_cache
+        let address_transfer_location: Vec<_> = block_number_to_block_cache
             .values()
-            .flat_map(|x| x.address_transfer_location.clone())
+            .flat_map(|x| x.address_transfer_location.clone().into_iter())
+            .sorted()
+            .unique()
             .collect();
 
         let token_to_meta = server

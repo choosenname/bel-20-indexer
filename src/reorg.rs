@@ -9,7 +9,7 @@ enum TokenHistoryEntry {
     /// Second arg `Fixed128` is amount of transfer to remove. We need to decrease user balance, transfers_count, transfers_amount + transfer count of deploy
     RemoveTransfer(Location, AddressToken, Fixed128),
     /// Key and value of removed valid transfer
-    RestoreTrasferred(AddressLocation, TransferProtoDB, Option<FullHash>),
+    RestoreTransferred(AddressLocation, TransferProtoDB, FullHash),
     RemoveHistory(AddressTokenId),
     RestorePrevout(OutPoint, TxOut),
 }
@@ -105,14 +105,14 @@ impl ReorgCache {
         &mut self,
         key: AddressLocation,
         value: TransferProtoDB,
-        recipient: Option<FullHash>,
+        recipient: FullHash,
     ) {
         self.blocks
             .last_entry()
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::RestoreTrasferred(key, value, recipient));
+            .push(TokenHistoryEntry::RestoreTransferred(key, value, recipient));
     }
 
     pub fn restore(&mut self, server: &Server, block_height: u32) -> anyhow::Result<()> {
@@ -147,7 +147,7 @@ impl ReorgCache {
                                 .push(DeployedUpdate::Transfer(receiver.token.clone()));
                             to_remove_transfer.push((location, receiver, amt));
                         }
-                        TokenHistoryEntry::RestoreTrasferred(key, value, recipient) => {
+                        TokenHistoryEntry::RestoreTransferred(key, value, recipient) => {
                             to_update_deployed.push(DeployedUpdate::Transfered(value.tick.into()));
                             to_restore_transferred.push((key, value, recipient));
                         }
@@ -244,17 +244,15 @@ impl ReorgCache {
                         .chain(to_remove_transfer.iter().map(|x| x.1.clone()))
                         .chain(to_restore_transferred.iter().flat_map(|(k, v, recipient)| {
                             [
-                                Some(AddressToken {
+                                AddressToken {
                                     address: k.address,
                                     token: v.tick.into(),
-                                }),
-                                recipient.map(|recipient| AddressToken {
-                                    address: recipient,
+                                },
+                                AddressToken {
+                                    address: *recipient,
                                     token: v.tick.into(),
-                                }),
+                                },
                             ]
-                            .into_iter()
-                            .flatten()
                         }))
                         .collect_vec();
 
@@ -305,7 +303,7 @@ impl ReorgCache {
                         account.transferable_balance += v.amt;
                         account.transfers_count += 1;
 
-                        if let Some(recipient) = recipient {
+                        if !recipient.is_op_return_hash() {
                             let key = AddressToken {
                                 address: *recipient,
                                 token: v.tick.into(),

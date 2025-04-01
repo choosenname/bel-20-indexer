@@ -151,7 +151,6 @@ async fn run_rest(token: WaitToken, server: Arc<Server>) -> anyhow::Result<()> {
         token.cancelled().await;
         tokio::time::sleep(Duration::from_secs(2)).await;
     };
-
     tokio::select! {
         v = rest => {
             info!("Rest finished");

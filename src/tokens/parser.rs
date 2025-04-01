@@ -279,6 +279,7 @@ impl TokenCache {
                     let Some(token) = self.tokens.get_mut(&tick.into()) else {
                         continue;
                     };
+
                     let DeployProtoDB { transactions, .. } = &mut token.proto;
 
                     holders.decrease(&old_key, old_account, amt);
@@ -286,39 +287,34 @@ impl TokenCache {
                     old_account.transferable_balance -= amt;
                     *transactions += 1;
 
-                    if let Some(recipient) = recipient {
-                        let key = AddressToken {
+                    if !recipient.is_op_return_hash() {
+                        let recipient_key = AddressToken {
                             address: recipient,
                             token: tick.into(),
                         };
 
                         holders.increase(
-                            &key,
+                            &recipient_key,
                             self.token_accounts
-                                .get(&key)
+                                .get(&recipient_key)
                                 .unwrap_or(&TokenBalance::default()),
                             amt,
                         );
-                        self.token_accounts.entry(key).or_default().balance += amt;
 
-                        history.push(HistoryTokenAction::Send {
-                            amt,
-                            tick,
-                            recipient,
-                            sender,
-                            txid,
-                            vout,
-                        });
-                    } else {
-                        history.push(HistoryTokenAction::Send {
-                            tick,
-                            amt,
-                            recipient: sender,
-                            sender,
-                            txid,
-                            vout,
-                        });
+                        self.token_accounts
+                            .entry(recipient_key)
+                            .or_default()
+                            .balance += amt;
                     }
+
+                    history.push(HistoryTokenAction::Send {
+                        amt,
+                        tick,
+                        recipient,
+                        sender,
+                        txid,
+                        vout,
+                    });
 
                     if let Some(x) = reorg_cache.as_ref() {
                         x.lock().removed_transfer_token(
