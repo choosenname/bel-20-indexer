@@ -1,15 +1,13 @@
 use super::*;
 use std::default::Default;
 
-pub const PROTOCOL_ID: &[u8; 3] = b"ord";
-
 pub mod parser;
 mod structs;
 pub mod types;
 mod utils;
 
 use dutils::async_thread::Thread;
-use electrs_client::{BlockMeta, Update, UpdateCapable};
+use electrs_client::{BlockMeta, Update};
 use types::{InscriptionsTokenHistory, TokenHistoryData};
 pub use utils::ScriptToAddr;
 

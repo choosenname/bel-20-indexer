@@ -1,6 +1,6 @@
 use super::*;
 use nintondo_dogecoin::hashes::Hash;
-use nintondo_dogecoin::{OutPoint, Transaction, Txid, script};
+use nintondo_dogecoin::{OutPoint, Txid};
 
 #[derive(
     Serialize, Deserialize, Debug, Clone, PartialEq, Eq, core::hash::Hash, Ord, PartialOrd, Copy,

@@ -1,12 +1,11 @@
-use crate::Fixed128;
 use crate::tokens::{FullHash, TokenTick};
+use crate::Fixed128;
 use dutils::error::ContextWrapper;
 use electrs_client::{Fetchable, UpdateCapable};
 use itertools::Itertools;
 use nintondo_dogecoin::{Address, BlockHash, OutPoint, ScriptBuf};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use nintondo_dogecoin::hashes::Hash;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TokenHistoryData {

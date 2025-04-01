@@ -6,8 +6,8 @@ use crate::{
 };
 
 use super::{
-    utils::{first_page, page_size_default, to_scripthash, validate_tick},
-    AddressLocation, Fixed128, TransferProtoDB, BAD_PARAMS, INTERNAL, NETWORK,
+    utils::{first_page, page_size_default, to_scripthash, validate_tick}, AddressLocation, Fixed128, TransferProtoDB, BAD_PARAMS, INTERNAL,
+    NETWORK,
 };
 use axum::{
     extract::{Path, Query, State},

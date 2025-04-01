@@ -17,7 +17,7 @@ enum TokenHistoryEntry {
 struct ReorgHistoryBlock {
     token_history: Vec<TokenHistoryEntry>,
     last_history_id: u64,
-    block_header: BlockHeader
+    block_header: BlockHeader,
 }
 
 impl ReorgHistoryBlock {
@@ -44,15 +44,20 @@ impl ReorgCache {
     }
 
     pub fn get_blocks_headers(&self) -> Vec<BlockHeader> {
-        self.blocks.values().map(|x| x.block_header.clone()).collect()
+        self.blocks
+            .values()
+            .map(|x| x.block_header.clone())
+            .collect()
     }
 
-    pub fn new_block(&mut self,  block_header: BlockHeader,  last_history_id: u64) {
+    pub fn new_block(&mut self, block_header: BlockHeader, last_history_id: u64) {
         if self.blocks.len() == self.len {
             self.blocks.pop_first();
         }
-        self.blocks
-            .insert(block_header.number, ReorgHistoryBlock::new(block_header, last_history_id));
+        self.blocks.insert(
+            block_header.number,
+            ReorgHistoryBlock::new(block_header, last_history_id),
+        );
     }
 
     pub fn added_deployed_token(&mut self, tick: TokenTick) {
@@ -80,15 +85,6 @@ impl ReorgCache {
             .get_mut()
             .token_history
             .push(TokenHistoryEntry::RemoveHistory(key));
-    }
-
-    pub fn removed_prevout(&mut self, key: OutPoint, value: TxOut) {
-        self.blocks
-            .last_entry()
-            .unwrap()
-            .get_mut()
-            .token_history
-            .push(TokenHistoryEntry::RestorePrevout(key, value));
     }
 
     pub fn added_transfer_token(

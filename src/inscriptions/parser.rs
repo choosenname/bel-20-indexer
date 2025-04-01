@@ -1,12 +1,9 @@
-use std::collections::VecDeque;
 use std::default::Default;
 
 use super::*;
 use crate::inscriptions::types::{
-    HistoryLocation, Outpoint, ParsedTokenHistory, ParsedTokenHistoryData, TokenHistory,
-    TokenHistoryData,
+    HistoryLocation, Outpoint, ParsedTokenHistoryData,
 };
-use nintondo_dogecoin::{Address, hashes::serde_macros::serde_details::SerdeHash};
 
 pub struct InitialIndexer {}
 
