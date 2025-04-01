@@ -3,22 +3,13 @@ use std::default::Default;
 
 pub const PROTOCOL_ID: &[u8; 3] = b"ord";
 
-mod envelope;
-mod media;
 pub mod parser;
-mod searcher;
 mod structs;
-mod tag;
 pub mod types;
 mod utils;
 
 use dutils::async_thread::Thread;
 use electrs_client::{BlockMeta, Update, UpdateCapable};
-use envelope::{ParsedEnvelope, RawEnvelope};
-use jsonrpc_async::client;
-use searcher::InscriptionSearcher;
-use structs::{Inscription, ParsedInscription};
-use tag::Tag;
 use types::{InscriptionsTokenHistory, TokenHistoryData};
 pub use utils::ScriptToAddr;
 
