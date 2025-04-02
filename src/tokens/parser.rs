@@ -298,11 +298,12 @@ impl TokenCache {
                     if let Some(TransferProtoDB { tick, .. }) = proto {
                         if !recipient.is_op_return_hash() {
                             users.insert((*recipient, tick.into()));
-                            if let Some(transfer) = valid_transfer {
-                                users.insert((transfer.0, tick.into()));
-                            }
-                            tickers.insert(tick.into());
                         }
+
+                        if let Some(transfer) = valid_transfer {
+                            users.insert((transfer.0, tick.into()));
+                        }
+                        tickers.insert(tick.into());
                     }
                 }
             }
