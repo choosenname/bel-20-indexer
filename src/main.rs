@@ -141,6 +141,8 @@ async fn main() {
 }
 
 async fn run_rest(token: WaitToken, server: Arc<Server>) -> anyhow::Result<()> {
+    info!("Start REST");
+    
     let listener = tokio::net::TcpListener::bind(&*SERVER_URL).await.unwrap();
 
     let rest = axum::serve(listener, rest::get_router(server))

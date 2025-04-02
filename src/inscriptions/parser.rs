@@ -1,9 +1,7 @@
 use std::default::Default;
 
 use super::*;
-use crate::inscriptions::types::{
-    HistoryLocation, Outpoint, ParsedTokenHistoryData,
-};
+use crate::inscriptions::types::{HistoryLocation, Outpoint, ParsedTokenHistoryData};
 
 pub struct InitialIndexer {}
 
