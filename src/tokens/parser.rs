@@ -213,10 +213,16 @@ impl TokenCache {
         None
     }
 
-    pub fn trasferred(&mut self, location: Location, recipient: FullHash, txid: Txid, vout: u32) {
+    pub fn transferred(
+        &mut self,
+        transfer_location: Location,
+        recipient: FullHash,
+        txid: Txid,
+        vout: u32,
+    ) {
         self.token_actions.push(TokenAction::Transferred {
-            transfer_location: location,
-            recipient: Some(recipient),
+            transfer_location,
+            recipient,
             txid,
             vout,
         });
@@ -225,7 +231,7 @@ impl TokenCache {
     pub fn burned_transfer(&mut self, location: Location, txid: Txid, vout: u32) {
         self.token_actions.push(TokenAction::Transferred {
             transfer_location: location,
-            recipient: None,
+            recipient: *OP_RETURN_HASH,
             txid,
             vout,
         });
@@ -290,7 +296,7 @@ impl TokenCache {
                             valid_transfer.map(|x| Some(x.1.clone())).unwrap_or(None)
                         });
                     if let Some(TransferProtoDB { tick, .. }) = proto {
-                        if let Some(recipient) = recipient {
+                        if !recipient.is_op_return_hash() {
                             users.insert((*recipient, tick.into()));
                             if let Some(transfer) = valid_transfer {
                                 users.insert((transfer.0, tick.into()));
@@ -505,39 +511,34 @@ impl TokenCache {
                     old_account.transferable_balance -= amt;
                     *transactions += 1;
 
-                    if let Some(recipient) = recipient {
-                        let key = AddressToken {
+                    if !recipient.is_op_return_hash() {
+                        let recipient_key = AddressToken {
                             address: recipient,
                             token: tick.into(),
                         };
 
                         holders.increase(
-                            &key,
+                            &recipient_key,
                             self.token_accounts
-                                .get(&key)
+                                .get(&recipient_key)
                                 .unwrap_or(&TokenBalance::default()),
                             amt,
                         );
-                        self.token_accounts.entry(key).or_default().balance += amt;
 
-                        history.push(HistoryTokenAction::Send {
-                            amt,
-                            tick,
-                            recipient,
-                            sender,
-                            txid,
-                            vout,
-                        });
-                    } else {
-                        history.push(HistoryTokenAction::Send {
-                            tick,
-                            amt,
-                            recipient: sender,
-                            sender,
-                            txid,
-                            vout,
-                        });
+                        self.token_accounts
+                            .entry(recipient_key)
+                            .or_default()
+                            .balance += amt;
                     }
+
+                    history.push(HistoryTokenAction::Send {
+                        amt,
+                        tick,
+                        recipient,
+                        sender,
+                        txid,
+                        vout,
+                    });
 
                     if let Some(x) = reorg_cache.as_ref() {
                         x.lock().removed_transfer_token(

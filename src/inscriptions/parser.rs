@@ -59,10 +59,10 @@ impl InitialIndexer {
                         } else {
                             let owner =
                                 tx.output[vout as usize].script_pubkey.compute_script_hash();
-                            token_cache.trasferred(location, owner, txid, vout);
+                            token_cache.transferred(location, owner, txid, vout);
                         };
                     } else {
-                        token_cache.trasferred(
+                        token_cache.transferred(
                             location,
                             prevouts
                                 .get(&txin.previous_output)

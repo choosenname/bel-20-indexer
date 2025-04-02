@@ -490,8 +490,11 @@ pub enum TokenAction {
     },
     /// Founded move of transfer action.
     Transferred {
+        // TokenAction::Transfer location
         transfer_location: Location,
-        recipient: Option<FullHash>,
+        // if leaked then sender = recipient
+        // if burnt them recipient = OP_RETURN_HASH
+        recipient: FullHash,
         txid: Txid,
         vout: u32,
     },

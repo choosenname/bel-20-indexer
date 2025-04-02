@@ -9,7 +9,7 @@ enum TokenHistoryEntry {
     /// Second arg `Fixed128` is amount of transfer to remove. We need to decrease user balance, transfers_count, transfers_amount + transfer count of deploy
     RemoveTransfer(Location, AddressToken, Fixed128),
     /// Key and value of removed valid transfer
-    RestoreTrasferred(AddressLocation, TransferProtoDB, Option<FullHash>),
+    RestoreTransferred(AddressLocation, TransferProtoDB, FullHash),
     RemoveHistory(AddressTokenId),
     RestorePrevout(OutPoint, TxOut),
 }
@@ -104,14 +104,14 @@ impl ReorgCache {
         &mut self,
         key: AddressLocation,
         value: TransferProtoDB,
-        recipient: Option<FullHash>,
+        recipient: FullHash,
     ) {
         self.blocks
             .last_entry()
             .unwrap()
             .get_mut()
             .token_history
-            .push(TokenHistoryEntry::RestoreTrasferred(key, value, recipient));
+            .push(TokenHistoryEntry::RestoreTransferred(key, value, recipient));
     }
 
     pub fn restore(&mut self, server: &Server, block_height: u32) -> anyhow::Result<()> {
@@ -146,8 +146,8 @@ impl ReorgCache {
                                 .push(DeployedUpdate::Transfer(receiver.token.clone()));
                             to_remove_transfer.push((location, receiver, amt));
                         }
-                        TokenHistoryEntry::RestoreTrasferred(key, value, recipient) => {
-                            to_update_deployed.push(DeployedUpdate::Transfered(value.tick.into()));
+                        TokenHistoryEntry::RestoreTransferred(key, value, recipient) => {
+                            to_update_deployed.push(DeployedUpdate::Transferred(value.tick.into()));
                             to_restore_transferred.push((key, value, recipient));
                         }
                         TokenHistoryEntry::RemoveHistory(key) => {
@@ -181,7 +181,7 @@ impl ReorgCache {
                         .map(|x| match x {
                             DeployedUpdate::Mint(tick, _)
                             | DeployedUpdate::Transfer(tick)
-                            | DeployedUpdate::Transfered(tick) => tick.clone(),
+                            | DeployedUpdate::Transferred(tick) => tick.clone(),
                         })
                         .unique()
                         .collect_vec();
@@ -221,7 +221,7 @@ impl ReorgCache {
                             *transactions -= 1;
                             (tick, meta)
                         }
-                        DeployedUpdate::Transfered(tick) => {
+                        DeployedUpdate::Transferred(tick) => {
                             let mut meta = deploys.get(&tick).unwrap().clone();
                             let DeployProtoDB { transactions, .. } = &mut meta.proto;
                             *transactions -= 1;
@@ -243,17 +243,16 @@ impl ReorgCache {
                         .chain(to_remove_transfer.iter().map(|x| x.1.clone()))
                         .chain(to_restore_transferred.iter().flat_map(|(k, v, recipient)| {
                             [
-                                Some(AddressToken {
+                                AddressToken {
                                     address: k.address,
                                     token: v.tick.into(),
-                                }),
-                                recipient.map(|recipient| AddressToken {
-                                    address: recipient,
+                                },
+                                AddressToken {
+                                    address: *recipient,
                                     token: v.tick.into(),
-                                }),
+                                },
                             ]
                             .into_iter()
-                            .flatten()
                         }))
                         .collect_vec();
 
@@ -304,7 +303,7 @@ impl ReorgCache {
                         account.transferable_balance += v.amt;
                         account.transfers_count += 1;
 
-                        if let Some(recipient) = recipient {
+                        if !recipient.is_op_return_hash() {
                             let key = AddressToken {
                                 address: *recipient,
                                 token: v.tick.into(),
@@ -321,6 +320,7 @@ impl ReorgCache {
                         .db
                         .address_token_to_balance
                         .extend(accounts.into_iter());
+
                     server.db.address_location_to_transfer.extend(
                         to_restore_transferred
                             .into_iter()
@@ -350,5 +350,5 @@ impl ReorgCache {
 enum DeployedUpdate {
     Mint(LowerCaseTick, Fixed128),
     Transfer(LowerCaseTick),
-    Transfered(LowerCaseTick),
+    Transferred(LowerCaseTick),
 }
