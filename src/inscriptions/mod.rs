@@ -8,7 +8,6 @@ mod utils;
 
 use dutils::async_thread::Thread;
 use electrs_client::{BlockMeta, Update};
-use rocksdb::LogLevel::Info;
 use types::{InscriptionsTokenHistory, TokenHistoryData};
 pub use utils::ScriptToAddr;
 
@@ -166,13 +165,7 @@ async fn initial_indexer(
         let blocks_counter = updates.len();
 
         let now = Instant::now();
-        parser::InitialIndexer::handle_batch(updates, &server, None)
-            .await
-            .inspect_err(|e| {
-                dbg!(e);
-            })
-            .track()
-            .ok();
+        parser::InitialIndexer::handle_batch(updates, &server, None).await;
 
         info!(
             "handle_batch #{} took {}s",
@@ -196,11 +189,10 @@ async fn indexer(
 ) -> anyhow::Result<()> {
     info!("Start Indexer");
 
-    let mut last_index_height = server.db.last_block.get(()).unwrap_or_default();
-    let last_indexer_block = client.get_electrs_block_meta(last_index_height).await?;
-
     let mut repeater = token.repeat_until_cancel(Duration::from_secs(3));
     while repeater.next().await {
+        let mut last_index_height = server.db.last_block.get(()).unwrap_or_default();
+        let last_indexer_block = client.get_electrs_block_meta(last_index_height).await?;
         let last_electris_block = client.get_last_electrs_block_meta().await?;
 
         if let Some(blocks_gap) = last_electris_block
@@ -275,12 +267,7 @@ async fn indexer(
         }
 
         parser::InitialIndexer::handle_batch(parsed_updates, &server, Some(reorg_cache.clone()))
-            .await
-            .inspect_err(|e| {
-                dbg!(e);
-            })
-            .track()
-            .ok();
+            .await;
     }
     Ok(())
 }
